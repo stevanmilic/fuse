@@ -114,39 +114,6 @@ object FuseParserSpec extends TestSuite {
         )
       )
     }
-    test("parse simple func signature") {
-      parse(
-        "def area() -> f32"
-      ) ==> FFuncSig(
-        false,
-        FIdentifier("area"),
-        None,
-        None,
-        FType(FIdentifier("f32"), None)
-      )
-    }
-    test("parse tail func signature with generics") {
-      parse(
-        "tail def iter[A, B](acc: List[A], l: List[B]) -> List[A]"
-      ) ==> FFuncSig(
-        true,
-        FIdentifier("iter"),
-        Some(Seq(FTypeParam(FIdentifier("A")), FTypeParam(FIdentifier("B")))),
-        Some(
-          Seq(
-            FParam(
-              FIdentifier("acc"),
-              FType(FIdentifier("List"), Some(Seq(FType(FIdentifier("A")))))
-            ),
-            FParam(
-              FIdentifier("l"),
-              FType(FIdentifier("List"), Some(Seq(FType(FIdentifier("B")))))
-            )
-          )
-        ),
-        FType(FIdentifier("List"), Some(Seq(FType(FIdentifier("A")))))
-      )
-    }
     test("parse trait definition") {
       parse(
         "trait Shape:\n    def area() -> f32\n    def surface() -> f32"
@@ -200,6 +167,151 @@ object FuseParserSpec extends TestSuite {
         )
       )
     }
+    test("parse function definition with 1 * 2") {
+      parse("def one_and_two() -> i32:\n    1 * 2") ==> FFuncDef(
+        FFuncSig(
+          false,
+          FIdentifier("one_and_two"),
+          None,
+          None,
+          FType(FIdentifier("i32"), None)
+        ),
+        Seq(FMultiplication(FMemberExpr(FInt(1)), FMemberExpr(FInt(2))))
+      )
+    }
+    test("parse function definition with additive expression") {
+      parse("def sum(x: i32, y: i32) -> i32:\n    x + y") ==> FFuncDef(
+        FFuncSig(
+          false,
+          FIdentifier("sum"),
+          None,
+          Some(
+            Seq(
+              FParam(
+                FIdentifier("x"),
+                FType(FIdentifier("i32"))
+              ),
+              FParam(
+                FIdentifier("y"),
+                FType(FIdentifier("i32"))
+              )
+            )
+          ),
+          FType(FIdentifier("i32"), None)
+        ),
+        Seq(
+          FAddition(
+            FMemberExpr(FExprIdentifier(FIdentifier("x"))),
+            FMemberExpr(FExprIdentifier(FIdentifier("y")))
+          )
+        )
+      )
+    }
+    test("parse function definition with simple call expressions") {
+      parse(
+        "def sum_three_and_two() -> i32:\n sum(3, 2)"
+      ) ==> FFuncDef(
+        FFuncSig(
+          false,
+          FIdentifier("sum_three_and_two"),
+          None,
+          None,
+          FType(FIdentifier("i32"), None)
+        ),
+        Seq(
+          FCallExpr(
+            FMemberExpr(
+              FExprIdentifier(FIdentifier("sum"))
+            ),
+            Some(Seq(FMemberExpr(FInt(3)), FMemberExpr(FInt(2))))
+          )
+        )
+      )
+    }
+    test("parse function definition with call expressions") {
+      parse(
+        "def sum_list(l: List[i32]) -> i32:\n l.fold_left(0)(sum)"
+      ) ==> FFuncDef(
+        FFuncSig(
+          false,
+          FIdentifier("sum_list"),
+          None,
+          Some(
+            Seq(
+              FParam(
+                FIdentifier("l"),
+                FType(FIdentifier("List"), Some(Seq(FType(FIdentifier("i32")))))
+              )
+            )
+          ),
+          FType(FIdentifier("i32"), None)
+        ),
+        Seq(
+          FCallExpr(
+            FMemberExpr(
+              FExprIdentifier(FIdentifier("l")),
+              Seq(FIdentifier("fold_left"))
+            ),
+            Some(Seq(FMemberExpr((FInt(0))))),
+            Seq(
+              Left(Some(Seq(FMemberExpr(FExprIdentifier(FIdentifier("sum"))))))
+            )
+          )
+        )
+      )
+    }
+    test("parse trait implementation") {
+      parse(
+        "impl Shape for Circle:\n    def area() -> f32:\n        this.radius * this.radius * 3.14"
+      ) ==> FTraitImpl(
+        FIdentifier("Shape"),
+        None,
+        FIdentifier("Circle"),
+        None,
+        Seq(
+          FFuncDef(
+            FFuncSig(
+              false,
+              FIdentifier("area"),
+              None,
+              None,
+              FType(FIdentifier("f32"), None)
+            ),
+            Seq(
+              FMultiplication(
+                FMultiplication(
+                  FMemberExpr(
+                    FExprIdentifier(FIdentifier("this")),
+                    Seq(FIdentifier("radius"))
+                  ),
+                  FMemberExpr(
+                    FExprIdentifier(FIdentifier("this")),
+                    Seq(FIdentifier("radius"))
+                  )
+                ),
+                FMemberExpr(FFloat(3.14.toFloat))
+              )
+            )
+          )
+        )
+      )
+
+    }
+    test("fail parsing on bad indentation") {
+      assertMatch(runParser("type bool:\n  true\n    false")) {
+        case Failure(ParseError(Position(27, 3, 10), _, _)) =>
+      }
+    }
+    test(
+      "fail parsing on bad nested indentation having lower number of whitespaces"
+    ) {
+      assertMatch(
+        runParser(
+          "impl Shape for Circle:\n    def area() -> f32:\n this.radius * this.radius * 3.14"
+        )
+      ) { case Failure(ParseError(Position(79, 3, 34), _, _)) =>
+      }
+    }
   }
 
   def parse(s: String): FNode = {
@@ -210,5 +322,10 @@ object FuseParserSpec extends TestSuite {
         sys.error(parser.formatError(e, new ErrorFormatter(showTraces = true)))
       case Failure(e) => throw e
     }
+  }
+
+  def runParser(s: String) = {
+    val parser = new FuseParser(s)
+    parser.InputLine.run()
   }
 }
