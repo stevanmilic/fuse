@@ -16,8 +16,8 @@ object FuseTypesParser {
       i: FIdentifier,
       t: Option[Seq[FType]] = None
   ) extends FType
-  case class FTupleType(s: Seq[FSimpleType]) extends FType
-  case class FFuncType(i: FType, o: FType) extends FType
+  case class FTupleType(t1: FType, t2: FType) extends FType
+  case class FFuncType(i: Seq[FType], o: FType) extends FType
   type FTypes = Seq[FType]
 
   case class FParam(i: FIdentifier, t: FType)
@@ -45,11 +45,18 @@ abstract class FuseTypesParser extends FuseLexicalParser {
   // in theory go into an infite loop, if there is infinite amount of nesting
   // through type args.
   def Type: Rule1[FType] = rule {
-    FuncType | SimpleType
+    FuncType | TupleType | SimpleType
   }
-  // TODO: Handle the case with multiple params.
-  def FuncType = rule {
-    SimpleType ~ wspStr("->") ~ SimpleType ~> FFuncType
+  def FuncType = {
+    def FuncArgs = rule {
+      SimpleType ~> (Seq(_)) | "(" ~ SimpleType.*(",") ~ ")"
+    }
+    rule {
+      FuncArgs ~ wspStr("->") ~ Type ~> FFuncType
+    }
+  }
+  def TupleType = rule {
+    "(" ~ Type ~ "," ~ Type ~ ")" ~> FTupleType
   }
   def SimpleType = rule {
     Id ~ TypeArgs.? ~> FSimpleType

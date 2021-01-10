@@ -12,10 +12,10 @@ object FuseParserSpec extends TestSuite {
 
   val tests = Tests {
     test("parse primitive type") {
-      parse("type i32") ==> FPrimitiveType(FIdentifier("i32"))
+      parse("type i32") ==> FPrimitiveTypeDef(FIdentifier("i32"))
     }
     test("parse sum type") {
-      parse("type bool:\n    true\n    false") ==> FSumType(
+      parse("type bool:\n    true\n    false") ==> FSumTypeDef(
         FIdentifier("bool"),
         None,
         Seq(
@@ -25,7 +25,7 @@ object FuseParserSpec extends TestSuite {
       )
     }
     test("parse struct type") {
-      parse("type Point:\n    x: i32\n    y: i32") ==> FStructType(
+      parse("type Point:\n    x: i32\n    y: i32") ==> FStructTypeDef(
         FIdentifier("Point"),
         None,
         Seq(
@@ -46,7 +46,7 @@ object FuseParserSpec extends TestSuite {
       )
     }
     test("parse generic type") {
-      parse("type Option[T]:\n    None\n    Some(T)") ==> FSumType(
+      parse("type Option[T]:\n    None\n    Some(T)") ==> FSumTypeDef(
         FIdentifier("Option"),
         Some(Seq(FTypeParam(FIdentifier("T")))),
         Seq(
@@ -59,7 +59,7 @@ object FuseParserSpec extends TestSuite {
       )
     }
     test("parse generic type with two params") {
-      parse("type Map[K, V]:\n    key: K\n    value: V") ==> FStructType(
+      parse("type Map[K, V]:\n    key: K\n    value: V") ==> FStructTypeDef(
         FIdentifier("Map"),
         Some(Seq(FTypeParam(FIdentifier("K")), FTypeParam(FIdentifier("V")))),
         Seq(
@@ -99,7 +99,7 @@ object FuseParserSpec extends TestSuite {
     test("parse generic sum type with product value") {
       parse(
         "type List[A]:\n    Cons(head: A, t: List[A])\n    Nil"
-      ) ==> FSumType(
+      ) ==> FSumTypeDef(
         FIdentifier("List"),
         Some(Seq(FTypeParam(FIdentifier("A")))),
         Seq(
@@ -127,16 +127,73 @@ object FuseParserSpec extends TestSuite {
     test("parse type alias") {
       parse("type Ints = List[i32]") ==> FTypeAlias(
         FIdentifier("Ints"),
+        None,
         FSimpleType(
           FIdentifier("List"),
           Some(Seq(FSimpleType(FIdentifier("i32"))))
         )
       )
     }
+    test("parse type alias for function0 type") {
+      parse("type Function0[T] = () -> T") ==> FTypeAlias(
+        FIdentifier("Function0"),
+        Some(Seq(FTypeParam(FIdentifier("T")))),
+        FFuncType(Seq(), FSimpleType(FIdentifier("T")))
+      )
+    }
+    test("parse type alias for function1 type") {
+      parse("type Function1[A, B] = A -> B") ==> FTypeAlias(
+        FIdentifier("Function1"),
+        Some(Seq(FTypeParam(FIdentifier("A")), FTypeParam(FIdentifier("B")))),
+        FFuncType(
+          Seq(FSimpleType(FIdentifier("A"))),
+          FSimpleType(FIdentifier("B"))
+        )
+      )
+    }
+    test("parse type alias for function2 type") {
+      parse("type Function2[A, B, C] = (A, B) -> C") ==> FTypeAlias(
+        FIdentifier("Function2"),
+        Some(
+          Seq(
+            FTypeParam(FIdentifier("A")),
+            FTypeParam(FIdentifier("B")),
+            FTypeParam(FIdentifier("C"))
+          )
+        ),
+        FFuncType(
+          Seq(FSimpleType(FIdentifier("A")), FSimpleType(FIdentifier("B"))),
+          FSimpleType(FIdentifier("C"))
+        )
+      )
+    }
+    test("parse type alias for curried function") {
+      parse("type CurriedInt = Int -> Int -> Int") ==> FTypeAlias(
+        FIdentifier("CurriedInt"),
+        None,
+        FFuncType(
+          Seq(FSimpleType(FIdentifier("Int"))),
+          FFuncType(
+            Seq(FSimpleType(FIdentifier("Int"))),
+            FSimpleType(FIdentifier("Int"))
+          )
+        )
+      )
+    }
+    test("parse type alias for tuple of ints") {
+      parse("type IntTuple = (Int, Int)") ==> FTypeAlias(
+        FIdentifier("IntTuple"),
+        None,
+        FTupleType(
+          FSimpleType(FIdentifier("Int")),
+          FSimpleType(FIdentifier("Int"))
+        )
+      )
+    }
     test("parse trait definition") {
       parse(
         "trait Shape:\n    def area() -> f32\n    def surface() -> f32"
-      ) ==> FTrait(
+      ) ==> FTraitDef(
         FIdentifier("Shape"),
         None,
         Seq(
@@ -164,7 +221,7 @@ object FuseParserSpec extends TestSuite {
     test("parse trait defination with function definition") {
       parse(
         "trait Shape:\n def area() -> f32\n def double_area() -> f32:\n  this.area*2"
-      ) ==> FTrait(
+      ) ==> FTraitDef(
         FIdentifier("Shape"),
         None,
         Seq(
@@ -192,7 +249,7 @@ object FuseParserSpec extends TestSuite {
                     FExprIdentifier("this"),
                     Seq(FExprIdentifier("area"))
                   ),
-                  FMemberExpr(FInt(2))
+                  FInt(2)
                 )
               )
             )
@@ -203,7 +260,7 @@ object FuseParserSpec extends TestSuite {
     test("parse trait with default generic types") {
       parse(
         "trait Add[V = Self, O = Self]:\n    def add(other: V) -> O"
-      ) ==> FTrait(
+      ) ==> FTraitDef(
         FIdentifier("Add"),
         Some(
           Seq(
@@ -243,7 +300,7 @@ object FuseParserSpec extends TestSuite {
           None,
           FSimpleType(FIdentifier("i32"), None)
         ),
-        Seq(FMultiplication(FMemberExpr(FInt(1)), FMemberExpr(FInt(2))))
+        Seq(FMultiplication(FInt(1), FInt(2)))
       )
     }
     test("parse function definition with additive expression") {
@@ -268,8 +325,8 @@ object FuseParserSpec extends TestSuite {
         ),
         Seq(
           FAddition(
-            FMemberExpr(FExprIdentifier("x")),
-            FMemberExpr(FExprIdentifier("y"))
+            FExprIdentifier("x"),
+            FExprIdentifier("y")
           )
         )
       )
@@ -287,10 +344,8 @@ object FuseParserSpec extends TestSuite {
         ),
         Seq(
           FCallExpr(
-            FMemberExpr(
-              FExprIdentifier("sum")
-            ),
-            Some(Seq(FMemberExpr(FInt(3)), FMemberExpr(FInt(2))))
+            FExprIdentifier("sum"),
+            Some(Seq(FInt(3), FInt(2)))
           )
         )
       )
@@ -322,9 +377,9 @@ object FuseParserSpec extends TestSuite {
               FExprIdentifier("l"),
               Seq(FExprIdentifier("fold_left"))
             ),
-            Some(Seq(FMemberExpr((FInt(0))))),
+            Some(Seq((FInt(0)))),
             Seq(
-              Left(Some(Seq(FMemberExpr(FExprIdentifier("sum")))))
+              Left(Some(Seq(FExprIdentifier("sum"))))
             )
           )
         )
@@ -350,7 +405,7 @@ object FuseParserSpec extends TestSuite {
               FParam(
                 FIdentifier("f"),
                 FFuncType(
-                  FSimpleType(FIdentifier("A")),
+                  Seq(FSimpleType(FIdentifier("A"))),
                   FSimpleType(FIdentifier("B"))
                 )
               )
@@ -373,12 +428,12 @@ object FuseParserSpec extends TestSuite {
                 ),
                 Seq(
                   FMatchExpr(
-                    FMemberExpr(FExprIdentifier("l")),
+                    FExprIdentifier("l"),
                     Seq(
                       FCase(
                         Seq(FIdentifierPattern("Nil")),
                         None,
-                        Seq(FMemberExpr(FExprIdentifier("acc")))
+                        Seq(FExprIdentifier("acc"))
                       ),
                       FCase(
                         Seq(
@@ -393,24 +448,24 @@ object FuseParserSpec extends TestSuite {
                         None,
                         Seq(
                           FCallExpr(
-                            FMemberExpr(FExprIdentifier("iter")),
+                            FExprIdentifier("iter"),
                             Some(
                               Seq(
                                 FCallExpr(
-                                  FMemberExpr(FExprIdentifier("Cons")),
+                                  FExprIdentifier("Cons"),
                                   Some(
                                     Seq(
                                       FCallExpr(
-                                        FMemberExpr(FExprIdentifier("f")),
+                                        FExprIdentifier("f"),
                                         Some(
-                                          Seq(FMemberExpr(FExprIdentifier("h")))
+                                          Seq(FExprIdentifier("h"))
                                         )
                                       ),
-                                      FMemberExpr(FExprIdentifier("acc"))
+                                      FExprIdentifier("acc")
                                     )
                                   )
                                 ),
-                                FMemberExpr(FExprIdentifier("t"))
+                                FExprIdentifier("t")
                               )
                             )
                           )
@@ -423,14 +478,14 @@ object FuseParserSpec extends TestSuite {
             )
           ),
           FCallExpr(
-            FMemberExpr(FExprIdentifier("iter")),
+            FExprIdentifier("iter"),
             Some(
               Seq(
                 FCallExpr(
-                  FMemberExpr(FExprIdentifier("List")),
+                  FExprIdentifier("List"),
                   None
                 ),
-                FMemberExpr(FExprIdentifier("l"))
+                FExprIdentifier("l")
               )
             )
           )
@@ -514,7 +569,7 @@ object FuseParserSpec extends TestSuite {
                     Seq(FExprIdentifier("radius"))
                   )
                 ),
-                FMemberExpr(FFloat(3.14.toFloat))
+                FFloat(3.14.toFloat)
               )
             )
           )

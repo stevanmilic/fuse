@@ -41,7 +41,7 @@ abstract class FuseLexicalParser extends Parser {
   def Spacing = rule { ch('\t') | ch(' ') }
 
   // Meta rule that matches one or more indentent lines with the specified
-  // rule.  Accepts a `Function0` argument to prevent expansion of the passed
+  // rule. Accepts a `Function0` argument to prevent expansion of the passed
   // rule.  It's best to pass the a `val` member to the function in order to
   // prevent the re-allocation during every execution of the meta rule.
   // More info: https://github.com/sirthias/parboiled2#meta-rules

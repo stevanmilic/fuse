@@ -10,20 +10,20 @@ object FuseParser {
 
   sealed trait FNode
 
-  case class FPrimitiveType(t: FIdentifier) extends FNode
+  case class FPrimitiveTypeDef(t: FIdentifier) extends FNode
 
   case class FSumTypeValue(
       v: FIdentifier,
       t: Option[Either[FParams, FTypes]] = None
   )
-  case class FSumType(
+  case class FSumTypeDef(
       i: FIdentifier,
       t: FTypeParamClause,
       values: Seq[FSumTypeValue]
   ) extends FNode
 
   case class FStructTypeField(p: FParam)
-  case class FStructType(
+  case class FStructTypeDef(
       i: FIdentifier,
       t: FTypeParamClause,
       fields: Seq[FStructTypeField]
@@ -37,6 +37,7 @@ object FuseParser {
 
   case class FTypeAlias(
       i: FIdentifier,
+      tp: FTypeParamClause,
       t: FType
   ) extends FNode
 
@@ -47,7 +48,7 @@ object FuseParser {
   ) extends FNode
 
   // Trait definition + Implementations
-  case class FTrait(
+  case class FTraitDef(
       i: FIdentifier,
       tp: FTypeParamClause,
       f: Seq[Either[FFuncDef, FFuncSig]]
@@ -76,46 +77,47 @@ class FuseParser(val input: ParserInput) extends FuseTypesParser {
 
   def InputLine = rule { Program ~ EOI }
   def Program: Rule1[FNode] = rule {
-    StructType |
-      SumType |
-      TupleType |
+    StructTypeDef |
+      SumTypeDef |
+      TupleTypeDef |
       TypeAlias |
-      PrimitiveType |
+      PrimitiveTypeDef |
       FuncDef |
-      Trait |
+      TraitDef |
       TraitImpl |
       TypeImpl
   }
 
   def TypeDef = rule { "type" ~ Id }
-  def PrimitiveType = rule { TypeDef ~> FPrimitiveType }
+  def PrimitiveTypeDef = rule { TypeDef ~> FPrimitiveTypeDef }
 
-  def SumType = {
+  def SumTypeDef = {
     def SumTypeValueArgs = rule {
       "(" ~ (Params ~> (Left(_)) | Types ~> (Right(_))) ~ ")"
     }
     val SumTypeValue = () => rule { Id ~ SumTypeValueArgs.? ~> FSumTypeValue }
     rule {
       TypeDef ~ TypeParamClause.? ~ ":" ~ oneOrMoreWithIndent(SumTypeValue) ~>
-        FSumType
+        FSumTypeDef
     }
   }
 
-  def StructType = {
+  def StructTypeDef = {
     val StructTypeField = () => rule { Param ~> FStructTypeField }
     rule {
       TypeDef ~ TypeParamClause.? ~ ":" ~
-        oneOrMoreWithIndent(StructTypeField) ~> FStructType
+        oneOrMoreWithIndent(StructTypeField) ~> FStructTypeDef
     }
   }
 
-  def TupleType = rule {
+  def TupleTypeDef = rule {
     TypeDef ~ TypeParamClause.? ~ "(" ~ Types ~ ")" ~> FTupleTypeDef
   }
 
-  def TypeAlias = rule { TypeDef ~ wspStr("=") ~ Type ~> FTypeAlias }
+  def TypeAlias = rule {
+    TypeDef ~ TypeParamClause.? ~ wspStr("=") ~ Type ~> FTypeAlias
+  }
 
-  // Func definition
   def FuncDef = {
     def BlockExpr = rule { runSubParser(new FuseExpressionParser(_).BlockExpr) }
     rule {
@@ -123,12 +125,11 @@ class FuseParser(val input: ParserInput) extends FuseTypesParser {
     }
   }
 
-  // Trait definition + Implementations
-  def Trait = {
+  def TraitDef = {
     val TraitFunc = () => rule { FuncDef ~> (Left(_)) | FuncSig ~> (Right(_)) }
     rule {
       "trait" ~ Id ~ TypeParamClause.? ~ ":" ~ oneOrMoreWithIndent(TraitFunc) ~>
-        FTrait
+        FTraitDef
     }
   }
 
