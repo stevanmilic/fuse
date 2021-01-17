@@ -7,11 +7,11 @@ object FuseExpressionParser {
   import FuseLexicalParser._
   import FuseTypesParser._
 
-  // Infix expressions
   sealed trait FExpr
 
   case class FLetExpr(i: FIdentifier, t: Option[FType], e: Seq[FExpr])
       extends FExpr
+
   case class FLambdaBinding(i: FIdentifier, t: Option[FType] = None)
   case class FLambdaExpr(params: Seq[FLambdaBinding], e: Seq[FExpr])
       extends FExpr
@@ -48,7 +48,7 @@ object FuseExpressionParser {
       extends FInfixExpr
   type FArguments = Option[Seq[FExpr]]
   case class FCallExpr(
-      ids: FExpr,
+      e: FExpr,
       args: FArguments,
       a: Seq[Either[FArguments, Seq[FExprIdentifier]]] = Seq()
   ) extends FInfixExpr

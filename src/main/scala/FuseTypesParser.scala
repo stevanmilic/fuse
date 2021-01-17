@@ -9,6 +9,16 @@ object FuseTypesParser {
   case class FTypeParam(i: FIdentifier, defaultType: Option[FType] = None)
   type FTypeParamClause = Option[Seq[FTypeParam]]
 
+  // TODO: Refine the type that are present in the system. Introduce:
+  // * type indentifer (aka simple type)
+  // * type arrow (aka functyion type)
+  // * type unit (base type)
+  // * type bool (base type)
+  // * type string (base type)
+  // * type int (base type)
+  // * type float (base type)
+  // * type record
+  // * type variant
   sealed trait FType
 
   // Type Definitions
@@ -16,7 +26,7 @@ object FuseTypesParser {
       i: FIdentifier,
       t: Option[Seq[FType]] = None
   ) extends FType
-  case class FTupleType(t1: FType, t2: FType) extends FType
+  case class FTupleType(t1: Seq[FType]) extends FType
   case class FFuncType(i: Seq[FType], o: FType) extends FType
   type FTypes = Seq[FType]
 
@@ -47,6 +57,8 @@ abstract class FuseTypesParser extends FuseLexicalParser {
   def Type: Rule1[FType] = rule {
     FuncType | TupleType | SimpleType
   }
+  // TODO: Contemplate on the functype being an arrow type, with params
+  // desugared.
   def FuncType = {
     def FuncArgs = rule {
       SimpleType ~> (Seq(_)) | "(" ~ SimpleType.*(",") ~ ")"
@@ -56,7 +68,7 @@ abstract class FuseTypesParser extends FuseLexicalParser {
     }
   }
   def TupleType = rule {
-    "(" ~ Type ~ "," ~ Type ~ ")" ~> FTupleType
+    "(" ~ Type.*(",") ~ ")" ~> FTupleType
   }
   def SimpleType = rule {
     Id ~ TypeArgs.? ~> FSimpleType
