@@ -1,4 +1,4 @@
-package fuse
+package parser
 
 import scala.util.{Failure, Success}
 import utest._
@@ -12,26 +12,26 @@ object FuseExpressionSpec extends TestSuite {
   val tests = Tests {
     test("parse additive expression with identifiers") {
       parse("x + y") ==> FAddition(
-        FExprIdentifier("x"),
-        FExprIdentifier("y")
+        FVar("x"),
+        FVar("y")
       )
     }
     test("parse substraction expression") {
       parse("x - y") ==> FSubtraction(
-        FExprIdentifier("x"),
-        FExprIdentifier("y")
+        FVar("x"),
+        FVar("y")
       )
     }
     test("parse division expression") {
       parse("x / y") ==> FDivision(
-        FExprIdentifier("x"),
-        FExprIdentifier("y")
+        FVar("x"),
+        FVar("y")
       )
     }
     test("parse modulo expression") {
       parse("x % y") ==> FModulo(
-        FExprIdentifier("x"),
-        FExprIdentifier("y")
+        FVar("x"),
+        FVar("y")
       )
     }
     test("parse multiplication expression") {
@@ -42,99 +42,101 @@ object FuseExpressionSpec extends TestSuite {
     }
     test("parse equality expression") {
       parse("x == y") ==> FEquality(
-        FExprIdentifier("x"),
-        FExprIdentifier("y")
+        FVar("x"),
+        FVar("y")
       )
     }
     test("parse not equal expression") {
       parse("x != y") ==> FNotEquality(
-        FExprIdentifier("x"),
-        FExprIdentifier("y")
+        FVar("x"),
+        FVar("y")
       )
     }
     test("parse less than expression") {
       parse("x < y") ==> FLessThan(
-        FExprIdentifier("x"),
-        FExprIdentifier("y")
+        FVar("x"),
+        FVar("y")
       )
     }
     test("parse less than equal expression") {
       parse("x <= y") ==> FLessThanEqual(
-        FExprIdentifier("x"),
-        FExprIdentifier("y")
+        FVar("x"),
+        FVar("y")
       )
     }
     test("parse greater than expression") {
       parse("x > y") ==> FGreaterThan(
-        FExprIdentifier("x"),
-        FExprIdentifier("y")
+        FVar("x"),
+        FVar("y")
       )
     }
     test("parse greater than equal expression") {
       parse("x >= y") ==> FGreaterThanEqual(
-        FExprIdentifier("x"),
-        FExprIdentifier("y")
+        FVar("x"),
+        FVar("y")
       )
     }
     test("parse logical and expression") {
       parse("x && y") ==> FAnd(
-        FExprIdentifier("x"),
-        FExprIdentifier("y")
+        FVar("x"),
+        FVar("y")
       )
     }
     test("parse logical or operation") {
       parse("x || y") ==> FOr(
-        FExprIdentifier("x"),
-        FExprIdentifier("y")
+        FVar("x"),
+        FVar("y")
       )
     }
     test("parse simple call expressions") {
-      parse("sum(3, 2)") ==> FCallExpr(
-        FExprIdentifier("sum"),
-        Some(Seq(FInt(3), FInt(2)))
+      parse("sum(3, 2)") ==> FApp(
+        FVar("sum"),
+        Seq(Some(Seq(FInt(3), FInt(2))))
       )
     }
     test("parse dot accessor in multiplication expression") {
       parse("this.radius * this.radius * 3.14") ==> FMultiplication(
         FMultiplication(
-          FMemberExpr(
-            FExprIdentifier("this"),
-            Seq(FExprIdentifier("radius"))
+          FProj(
+            FVar("this"),
+            Seq(FVar("radius"))
           ),
-          FMemberExpr(
-            FExprIdentifier("this"),
-            Seq(FExprIdentifier("radius"))
+          FProj(
+            FVar("this"),
+            Seq(FVar("radius"))
           )
         ),
         FFloat(3.14.toFloat)
       )
     }
     test("parse call expressions with dot accessor and multiple arguments") {
-      parse("l.fold_left(0)(sum)") ==> FCallExpr(
-        FMemberExpr(
-          FExprIdentifier("l"),
-          Seq(FExprIdentifier("fold_left"))
+      parse("l.fold_left(0)(sum)") ==> FApp(
+        FProj(
+          FVar("l"),
+          Seq(FVar("fold_left"))
         ),
-        Some(Seq((FInt(0)))),
         Seq(
-          Left(Some(Seq(FExprIdentifier("sum"))))
+          Some(Seq((FInt(0)))),
+          Some(Seq(FVar("sum")))
         )
       )
     }
     test("parse call expression with lambda argument") {
-      parse("l.map(a => a + 1)") ==> FCallExpr(
-        FMemberExpr(
-          FExprIdentifier("l"),
-          Seq(FExprIdentifier("map"))
+      parse("l.map(a => a + 1)") ==> FApp(
+        FProj(
+          FVar("l"),
+          Seq(FVar("map"))
         ),
-        Some(
-          Seq(
-            FLambdaExpr(
-              Seq(FLambdaBinding(FIdentifier("a"))),
-              Seq(
-                FAddition(
-                  FExprIdentifier("a"),
-                  FInt(1)
+        Seq(
+          Some(
+            Seq(
+              FAbs(
+                Seq(FBinding(FIdentifier("a"))),
+                Seq(
+                  FAddition(
+                    FVar("a"),
+                    FInt(1)
+                  )
                 )
               )
             )
@@ -143,19 +145,21 @@ object FuseExpressionSpec extends TestSuite {
       )
     }
     test("parse call expression with lambda argument with inline block") {
-      parse("l.map(a => {\n a + 1\n })") ==> FCallExpr(
-        FMemberExpr(
-          FExprIdentifier("l"),
-          Seq(FExprIdentifier("map"))
+      parse("l.map(a => {\n a + 1\n })") ==> FApp(
+        FProj(
+          FVar("l"),
+          Seq(FVar("map"))
         ),
-        Some(
-          Seq(
-            FLambdaExpr(
-              Seq(FLambdaBinding(FIdentifier("a"))),
-              Seq(
-                FAddition(
-                  FExprIdentifier("a"),
-                  FInt(1)
+        Seq(
+          Some(
+            Seq(
+              FAbs(
+                Seq(FBinding(FIdentifier("a"))),
+                Seq(
+                  FAddition(
+                    FVar("a"),
+                    FInt(1)
+                  )
                 )
               )
             )
@@ -179,11 +183,11 @@ object FuseExpressionSpec extends TestSuite {
             FIdentifier("t"),
             None,
             Seq(
-              FLambdaExpr(
-                Seq(FLambdaBinding(FIdentifier("x"))),
+              FAbs(
+                Seq(FBinding(FIdentifier("x"))),
                 Seq(
                   FAddition(
-                    FExprIdentifier("x"),
+                    FVar("x"),
                     FInt(1)
                   )
                 )
@@ -191,13 +195,13 @@ object FuseExpressionSpec extends TestSuite {
             )
           ),
           FAddition(
-            FCallExpr(
-              FExprIdentifier("t"),
-              Some(Seq(FInt(5)))
+            FApp(
+              FVar("t"),
+              Seq(Some(Seq(FInt(5))))
             ),
-            FCallExpr(
-              FExprIdentifier("t"),
-              Some(Seq(FInt(6)))
+            FApp(
+              FVar("t"),
+              Seq(Some(Seq(FInt(6))))
             )
           )
         )
@@ -211,54 +215,54 @@ object FuseExpressionSpec extends TestSuite {
       )
     }
     test("parse lambda expression") {
-      parse("(a, b) => a + b") ==> FLambdaExpr(
+      parse("(a, b) => a + b") ==> FAbs(
         Seq(
-          FLambdaBinding(FIdentifier("a")),
-          FLambdaBinding(FIdentifier("b"))
+          FBinding(FIdentifier("a")),
+          FBinding(FIdentifier("b"))
         ),
         Seq(
           FAddition(
-            FExprIdentifier("a"),
-            FExprIdentifier("b")
+            FVar("a"),
+            FVar("b")
           )
         )
       )
     }
     test("parse lambda expression with block inline expression") {
-      parse("(f, g, v) => {\n let fv = f(v)\n g(fv)\n }") ==> FLambdaExpr(
+      parse("(f, g, v) => {\n let fv = f(v)\n g(fv)\n }") ==> FAbs(
         Seq(
-          FLambdaBinding(FIdentifier("f")),
-          FLambdaBinding(FIdentifier("g")),
-          FLambdaBinding(FIdentifier("v"))
+          FBinding(FIdentifier("f")),
+          FBinding(FIdentifier("g")),
+          FBinding(FIdentifier("v"))
         ),
         Seq(
           FLetExpr(
             FIdentifier("fv"),
             None,
             Seq(
-              FCallExpr(
-                FExprIdentifier("f"),
-                Some(Seq(FExprIdentifier("v")))
+              FApp(
+                FVar("f"),
+                Seq(Some(Seq(FVar("v"))))
               )
             )
           ),
-          FCallExpr(
-            FExprIdentifier("g"),
-            Some(Seq(FExprIdentifier("fv")))
+          FApp(
+            FVar("g"),
+            Seq(Some(Seq(FVar("fv"))))
           )
         )
       )
     }
     test("parse nested lambda expression") {
-      parse("(a) => (b) => a + b") ==> FLambdaExpr(
-        Seq(FLambdaBinding(FIdentifier("a"))),
+      parse("(a) => (b) => a + b") ==> FAbs(
+        Seq(FBinding(FIdentifier("a"))),
         Seq(
-          FLambdaExpr(
-            Seq(FLambdaBinding(FIdentifier("b"))),
+          FAbs(
+            Seq(FBinding(FIdentifier("b"))),
             Seq(
               FAddition(
-                FExprIdentifier("a"),
-                FExprIdentifier("b")
+                FVar("a"),
+                FVar("b")
               )
             )
           )
@@ -266,27 +270,27 @@ object FuseExpressionSpec extends TestSuite {
       )
     }
     test("parse lambda expression with annotations") {
-      parse("(a: i32) => a + 1") ==> FLambdaExpr(
+      parse("(a: i32) => a + 1") ==> FAbs(
         Seq(
-          FLambdaBinding(
+          FBinding(
             FIdentifier("a"),
             Some(FSimpleType(FIdentifier("i32")))
           )
         ),
         Seq(
           FAddition(
-            FExprIdentifier("a"),
+            FVar("a"),
             FInt(1)
           )
         )
       )
     }
     test("parse lambda expression with single param and no paranthesis") {
-      parse("a => a + 1") ==> FLambdaExpr(
-        Seq(FLambdaBinding(FIdentifier("a"))),
+      parse("a => a + 1") ==> FAbs(
+        Seq(FBinding(FIdentifier("a"))),
         Seq(
           FAddition(
-            FExprIdentifier("a"),
+            FVar("a"),
             FInt(1)
           )
         )
@@ -297,58 +301,58 @@ object FuseExpressionSpec extends TestSuite {
         FIdentifier("f"),
         None,
         Seq(
-          FLambdaExpr(
-            Seq(FLambdaBinding(FIdentifier("a"))),
+          FAbs(
+            Seq(FBinding(FIdentifier("a"))),
             Seq(
-              FAddition(FExprIdentifier("a"), FInt(1))
+              FAddition(FVar("a"), FInt(1))
             )
           )
         )
       )
     }
     test("parse match expression with deconstructing sum and struct types") {
-      parse("match m:\n Some(v) => v\n None => b") ==> FMatchExpr(
-        FExprIdentifier("m"),
+      parse("match m:\n Some(v) => v\n None => b") ==> FMatch(
+        FVar("m"),
         Seq(
           FCase(
             Seq(
-              FSumStructPattern(
+              FVariantOrRecordPattern(
                 FIdentifier("Some"),
                 Seq(FIdentifierPattern("v"))
               )
             ),
             None,
-            Seq(FExprIdentifier("v"))
+            Seq(FVar("v"))
           ),
           FCase(
             Seq(FIdentifierPattern("None")),
             None,
-            Seq(FExprIdentifier("b"))
+            Seq(FVar("b"))
           )
         )
       )
     }
     test("parse match expression with literals") {
-      parse("match x:\n 1 => a\n 2 => b\n _ => c") ==> FMatchExpr(
-        FExprIdentifier("x"),
+      parse("match x:\n 1 => a\n 2 => b\n _ => c") ==> FMatch(
+        FVar("x"),
         Seq(
           FCase(
             Seq(FInt(1)),
             None,
-            Seq(FExprIdentifier("a"))
+            Seq(FVar("a"))
           ),
-          FCase(Seq(FInt(2)), None, Seq(FExprIdentifier("b"))),
+          FCase(Seq(FInt(2)), None, Seq(FVar("b"))),
           FCase(
             Seq(FWildCardPattern),
             None,
-            Seq(FExprIdentifier("c"))
+            Seq(FVar("c"))
           )
         )
       )
     }
     test("parse match expression with deconstructing tuples") {
-      parse("match t:\n (x, y) => x + y") ==> FMatchExpr(
-        FExprIdentifier("t"),
+      parse("match t:\n (x, y) => x + y") ==> FMatch(
+        FVar("t"),
         Seq(
           FCase(
             Seq(
@@ -359,8 +363,8 @@ object FuseExpressionSpec extends TestSuite {
             None,
             Seq(
               FAddition(
-                FExprIdentifier("x"),
-                FExprIdentifier("y")
+                FVar("x"),
+                FVar("y")
               )
             )
           )
@@ -368,23 +372,23 @@ object FuseExpressionSpec extends TestSuite {
       )
     }
     test("parse match expression with if guard") {
-      parse("match m:\n Some(x) if x > 0 => x") ==> FMatchExpr(
-        FExprIdentifier("m"),
+      parse("match m:\n Some(x) if x > 0 => x") ==> FMatch(
+        FVar("m"),
         Seq(
           FCase(
             Seq(
-              FSumStructPattern(
+              FVariantOrRecordPattern(
                 FIdentifier("Some"),
                 Seq(FIdentifierPattern("x"))
               )
             ),
             Some(
               FGreaterThan(
-                FExprIdentifier("x"),
+                FVar("x"),
                 FInt(0)
               )
             ),
-            Seq(FExprIdentifier("x"))
+            Seq(FVar("x"))
           )
         )
       )
@@ -392,19 +396,19 @@ object FuseExpressionSpec extends TestSuite {
     test(
       "parse match expression with multiple conditional patterns in a case clause"
     ) {
-      parse("match S(1, 2):\n S(1, _) | S(_, 2) => 3") ==> FMatchExpr(
-        FCallExpr(
-          FExprIdentifier("S"),
-          Some(Seq(FInt(1), FInt(2)))
+      parse("match S(1, 2):\n S(1, _) | S(_, 2) => 3") ==> FMatch(
+        FApp(
+          FVar("S"),
+          Seq(Some(Seq(FInt(1), FInt(2))))
         ),
         Seq(
           FCase(
             Seq(
-              FSumStructPattern(
+              FVariantOrRecordPattern(
                 FIdentifier("S"),
                 Seq(FInt(1), FWildCardPattern)
               ),
-              FSumStructPattern(
+              FVariantOrRecordPattern(
                 FIdentifier("S"),
                 Seq(FWildCardPattern, FInt(2))
               )
@@ -416,15 +420,15 @@ object FuseExpressionSpec extends TestSuite {
       )
     }
     test("parse match expression with binding") {
-      parse("match e:\n f @ Left(_) => f\n Right(v) => v") ==> FMatchExpr(
-        FExprIdentifier("e"),
+      parse("match e:\n f @ Left(_) => f\n Right(v) => v") ==> FMatch(
+        FVar("e"),
         Seq(
           FCase(
             Seq(
               FIdentifierPattern(
                 "f",
                 Some(
-                  FSumStructPattern(
+                  FVariantOrRecordPattern(
                     FIdentifier("Left"),
                     Seq(FWildCardPattern)
                   )
@@ -432,17 +436,17 @@ object FuseExpressionSpec extends TestSuite {
               )
             ),
             None,
-            Seq(FExprIdentifier("f"))
+            Seq(FVar("f"))
           ),
           FCase(
             Seq(
-              FSumStructPattern(
+              FVariantOrRecordPattern(
                 FIdentifier("Right"),
                 Seq(FIdentifierPattern("v"))
               )
             ),
             None,
-            Seq(FExprIdentifier("v"))
+            Seq(FVar("v"))
           )
         )
       )

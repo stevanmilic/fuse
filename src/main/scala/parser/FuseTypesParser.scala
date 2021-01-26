@@ -1,4 +1,4 @@
-package fuse
+package parser
 
 import org.parboiled2._
 
@@ -9,16 +9,6 @@ object FuseTypesParser {
   case class FTypeParam(i: FIdentifier, defaultType: Option[FType] = None)
   type FTypeParamClause = Option[Seq[FTypeParam]]
 
-  // TODO: Refine the type that are present in the system. Introduce:
-  // * type indentifer (aka simple type)
-  // * type arrow (aka functyion type)
-  // * type unit (base type)
-  // * type bool (base type)
-  // * type string (base type)
-  // * type int (base type)
-  // * type float (base type)
-  // * type record
-  // * type variant
   sealed trait FType
 
   // Type Definitions
@@ -32,14 +22,6 @@ object FuseTypesParser {
 
   case class FParam(i: FIdentifier, t: FType)
   type FParams = Seq[FParam]
-
-  case class FFuncSig(
-      isTail: Boolean,
-      i: FIdentifier,
-      tp: FTypeParamClause,
-      p: Option[FParams],
-      r: FType
-  )
 
 }
 
@@ -57,8 +39,6 @@ abstract class FuseTypesParser extends FuseLexicalParser {
   def Type: Rule1[FType] = rule {
     FuncType | TupleType | SimpleType
   }
-  // TODO: Contemplate on the functype being an arrow type, with params
-  // desugared.
   def FuncType = {
     def FuncArgs = rule {
       SimpleType ~> (Seq(_)) | "(" ~ SimpleType.*(",") ~ ")"
@@ -78,11 +58,4 @@ abstract class FuseTypesParser extends FuseLexicalParser {
 
   def Param = rule { Id ~ ":" ~ Type ~> FParam }
   def Params = rule { Param.+(",") }
-
-  def FuncSig = {
-    def Tail = rule { capture("tail".?) ~> ((s: String) => !s.isEmpty) }
-    rule {
-      Tail ~ "def" ~ Id ~ TypeParamClause.? ~ "(" ~ Params.? ~ ")" ~ "->" ~ Type ~> FFuncSig
-    }
-  }
 }
