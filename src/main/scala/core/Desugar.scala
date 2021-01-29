@@ -6,8 +6,6 @@ import parser.FuseTypesParser._
 import core.Context._
 
 object Desugar {
-  val RecursiveParam = "P"
-
   def process(decls: Seq[FDecl]): (List[Bind], Context) = {
     decls.foldLeft((List[Bind](), Context.empty))((acc, d) => {
       val (b, c) = bind(d, acc._2)
@@ -16,7 +14,7 @@ object Desugar {
   }
 
   def bind(d: FDecl, c: Context): (Bind, Context) = d match {
-    case FVariantTypeDecl(FIdentifier(i), None, values) => {
+    case FVariantTypeDecl(FIdentifier(i), typ, values) => {
       val t = values.toStream
         .map(_.t)
         .flatten
@@ -24,75 +22,104 @@ object Desugar {
           case Right(r) => r
           case Left(p)  => p.map(_.t)
         })
-      val (c1, variant) =
-        handleRecursiveType(c, i, t, ctx => toTypeVariant(ctx, values))
+      val (c1, variant) = withTypeAbs(
+        typ,
+        withRecType(i, t, toTypeVariant(values))
+      )(c)
       (Bind(i, TypeAbbBind(variant)), Context.addName(c1, i))
     }
-    case FRecordTypeDecl(FIdentifier(i), None, fields) => {
+    case FRecordTypeDecl(FIdentifier(i), typ, fields) => {
       val p = fields.map(_.p)
-      val (c1, record) =
-        handleRecursiveType(c, i, p.map(_.t), ctx => toTypeRecord(ctx, p))
+      val (c1, record) = withTypeAbs(
+        typ,
+        withRecType(i, p.map(_.t), toTypeRecord(p))
+      )(c)
       (Bind(i, TypeAbbBind(record)), Context.addName(c1, i))
     }
-    case FTupleTypeDecl(FIdentifier(i), None, types) => {
-      val (c1, record) =
-        handleRecursiveType(c, i, types, ctx => toTupleTypeRecord(ctx, types))
+    case FTupleTypeDecl(FIdentifier(i), typ, types) => {
+      val (c1, record) = withTypeAbs(
+        typ,
+        withRecType(i, types, toTupleTypeRecord(types))
+      )(c)
       (Bind(i, TypeAbbBind(record)), Context.addName(c1, i))
     }
-    case FTypeAlias(FIdentifier(i), None, t) =>
-      val (c1, abb) =
-        handleRecursiveType(c, i, Seq(t), ctx => toType(ctx, t))
+    case FTypeAlias(FIdentifier(i), typ, t) =>
+      val (c1, abb) = withTypeAbs(
+        typ,
+        withRecType(i, Seq(t), toType(t))
+      )(c)
       (Bind(i, TypeAbbBind(abb)), Context.addName(c1, i))
     case _ => throw new Exception("not supported decl")
   }
 
   def toTypeVariant(
-      c: Context,
       v: Seq[FVariantTypeValue]
-  ): TypeVariant =
+  ): Context => TypeVariant = ctx =>
     TypeVariant(
       v.foldRight(List[(String, Type)]())((field, acc) => {
         field match {
           case FVariantTypeValue(FIdentifier(ti), None) =>
             (ti, TypeUnit) :: acc
           case FVariantTypeValue(FIdentifier(ti), Some(Right(ts))) =>
-            (ti, toTupleTypeRecord(c, ts)) :: acc
+            (ti, toTupleTypeRecord(ts)(ctx)) :: acc
           case FVariantTypeValue(FIdentifier(ti), Some(Left(p))) =>
-            (ti, toTypeRecord(c, p)) :: acc
+            (ti, toTypeRecord(p)(ctx)) :: acc
           case _ => acc
         }
       })
     )
 
-  def toTypeRecord(c: Context, p: FParams): TypeRecord =
+  def toTypeRecord(p: FParams): Context => TypeRecord = ctx =>
     TypeRecord(p.foldRight(List[(String, Type)]())((v, acc) => {
-      (v.i.value, toType(c, v.t)) :: acc
+      (v.i.value, toType(v.t)(ctx)) :: acc
     }))
 
-  def toTupleTypeRecord(c: Context, ts: FTypes): TypeRecord =
+  def toTupleTypeRecord(ts: FTypes): Context => TypeRecord = ctx =>
     TypeRecord(ts.zipWithIndex.foldRight(List[(String, Type)]())((v, acc) => {
-      ((v._2 + 1).toString, toType(c, v._1)) :: acc
+      ((v._2 + 1).toString, toType(v._1)(ctx)) :: acc
     }))
 
-  def handleRecursiveType(
-      c: Context,
+  def withTypeAbs(
+      typ: FTypeParamClause,
+      f: (Context, Kind) => (Context, Type)
+  ): Context => (Context, Type) = ctx =>
+    typ match {
+      case Some(p) => {
+        val ids = p.map(_.i.value).toList
+        // First add all the type variables in the context.
+        val c1 = ids.foldLeft(ctx)((acc, n) => (Context.addName(acc, n)))
+        // Calculate the kind of the recursive type by counting the number of
+        // its type parameters. Kind arrow should be right associative.
+        val knd =
+          List.fill(ids.length + 1)(KindStar: Kind).reduceRight(KindArrow(_, _))
+        // Then determine the underlying type.
+        val (c2, t) = f(c1, knd)
+        // Use the type to bulid type abstraction containg the type variables.
+        (c2, ids.foldRight(t)((i, acc) => TypeAbs(i, acc)))
+      }
+      case None => f(ctx, KindStar)
+    }
+
+  def withRecType(
       i: String,
       types: FTypes,
       f: Context => Type
-  ): (Context, Type) = isIdentifierInTypes(i, types) match {
-    case true => {
-      val c1 = Context.addName(c, RecursiveParam)
-      (c1, TypeRec(RecursiveParam, f(c1)))
+  ): (Context, Kind) => (Context, Type) = (ctx, knd) =>
+    isIdentifierInTypes(i, types) match {
+      case true => {
+        val ri = toRecId(i)
+        val c1 = Context.addName(ctx, ri)
+        (c1, TypeRec(ri, knd, f(c1)))
+      }
+      case false => (ctx, f(ctx))
     }
-    case false => (c, f(c))
-  }
 
   def isIdentifierInTypes(identifier: String, types: FTypes): Boolean =
     types.foldRight(false)((t, acc) => {
       val b = t match {
         case FSimpleType(FIdentifier(ti), None) => identifier == ti
-        case FSimpleType(FIdentifier(ti), Some(Seq(ts))) =>
-          identifier == ti || isIdentifierInTypes(identifier, Seq(ts))
+        case FSimpleType(FIdentifier(ti), Some(ts)) =>
+          identifier == ti || isIdentifierInTypes(identifier, ts)
         case FTupleType(ts) => isIdentifierInTypes(identifier, types)
         case FFuncType(ts, t) =>
           isIdentifierInTypes(identifier, ts) || isIdentifierInTypes(
@@ -103,32 +130,44 @@ object Desugar {
       b || acc
     })
 
-  def toType(c: Context, t: FType): Type = t match {
-    case FSimpleType(FIdentifier("i32"), None) =>
-      TypeInt
-    case FSimpleType(FIdentifier("f32"), None) =>
-      TypeFloat
-    case FSimpleType(FIdentifier("bool"), None) =>
-      TypeBool
-    case FSimpleType(FIdentifier("str"), None) =>
-      TypeString
-    case FSimpleType(FIdentifier(i), None) =>
-      Context.nameToIndex(c, i) match {
-        case Some(index) => TypeVar(index, c.length)
-        case None        => TypeId(i)
+  def toType(t: FType): Context => Type = ctx =>
+    t match {
+      case FSimpleType(FIdentifier("i32"), None) =>
+        TypeInt
+      case FSimpleType(FIdentifier("f32"), None) =>
+        TypeFloat
+      case FSimpleType(FIdentifier("bool"), None) =>
+        TypeBool
+      case FSimpleType(FIdentifier("str"), None) =>
+        TypeString
+      case FSimpleType(FIdentifier(i), None) =>
+        toCtxIndex(ctx, i) match {
+          case Some(index) => TypeVar(index, ctx.length)
+          case None        => TypeId(i)
+        }
+      case FSimpleType(FIdentifier(i), Some(tys)) => {
+        val t = toCtxIndex(ctx, i) match {
+          case Some(index) => TypeVar(index, ctx.length)
+          case None        => TypeId(i)
+        }
+        // Type application should be left associative.
+        tys.foldLeft(t)((ta, tp) => TypeApp(ta, toType(tp)(ctx)))
       }
-    case FFuncType(ts, t1) => {
-      def typesToArrowInput(l: List[Type]): Type = l match {
-        case h :: Nil => h
-        // TODO: Check if associativity is good.
-        case h :: t => TypeArrow(h, typesToArrowInput(t))
-        case Nil    => TypeUnit
+      case FFuncType(ts, t1) => {
+        val i = ts.map(toType(_)(ctx)).toList
+        val o = toType(t1)(ctx)
+        i match {
+          case Nil => TypeArrow(TypeUnit, o)
+          // Type abstractions (arrow) should be right associative.
+          case _ => (i :+ o).reduceRight(TypeArrow(_, _))
+        }
       }
-      val i = ts.map(toType(c, _)).toList
-      val o = toType(c, t1)
-      TypeArrow(typesToArrowInput(i), o)
+      case _ => throw new Exception("not supported type")
     }
-    case _ => throw new Exception("not supported type")
-  }
+
+  def toCtxIndex(ctx: Context, i: String): Option[Int] =
+    Context.nameToIndex(ctx, i).orElse(Context.nameToIndex(ctx, toRecId(i)))
+
+  def toRecId(i: String) = s"@$i"
 
 }
