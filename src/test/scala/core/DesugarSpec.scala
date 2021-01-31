@@ -2,8 +2,9 @@ package core
 
 import cats.data.State
 import core.Context._
-import parser.FuseParser._
+import parser.FuseExpressionParser._
 import parser.FuseLexicalParser._
+import parser.FuseParser._
 import parser.FuseTypesParser._
 import utest._
 
@@ -20,9 +21,13 @@ object DesugarSpec extends TestSuite {
           )
         )
       ) ==> (List(("bool", NameBind)),
-      Bind(
-        "bool",
-        TypeAbbBind(TypeVariant(List(("true", TypeUnit), ("false", TypeUnit))))
+      List(
+        Bind(
+          "bool",
+          TypeAbbBind(
+            TypeVariant(List(("true", TypeUnit), ("false", TypeUnit)))
+          )
+        )
       ))
     }
     test("desugar variant with tuple record type") {
@@ -39,13 +44,15 @@ object DesugarSpec extends TestSuite {
           )
         )
       ) ==> (List(("OptionInt", NameBind)),
-      Bind(
-        "OptionInt",
-        TypeAbbBind(
-          TypeVariant(
-            List(
-              ("None", TypeUnit),
-              ("Some", TypeRecord(List(("1", TypeInt))))
+      List(
+        Bind(
+          "OptionInt",
+          TypeAbbBind(
+            TypeVariant(
+              List(
+                ("None", TypeUnit),
+                ("Some", TypeRecord(List(("1", TypeInt))))
+              )
             )
           )
         )
@@ -83,16 +90,21 @@ object DesugarSpec extends TestSuite {
           )
         )
       ) ==> (List(("DataPoint", NameBind)),
-      Bind(
-        "DataPoint",
-        TypeAbbBind(
-          TypeVariant(
-            List(
-              ("2DPoint", TypeRecord(List(("x", TypeFloat), ("y", TypeFloat)))),
-              (
-                "3DPoint",
-                TypeRecord(
-                  List(("x", TypeFloat), ("y", TypeFloat), ("z", TypeFloat))
+      List(
+        Bind(
+          "DataPoint",
+          TypeAbbBind(
+            TypeVariant(
+              List(
+                (
+                  "2DPoint",
+                  TypeRecord(List(("x", TypeFloat), ("y", TypeFloat)))
+                ),
+                (
+                  "3DPoint",
+                  TypeRecord(
+                    List(("x", TypeFloat), ("y", TypeFloat), ("z", TypeFloat))
+                  )
                 )
               )
             )
@@ -115,9 +127,11 @@ object DesugarSpec extends TestSuite {
           )
         )
       ) ==> (List(("Point", NameBind)),
-      Bind(
-        "Point",
-        TypeAbbBind(TypeRecord(List(("x", TypeInt), ("y", TypeInt))))
+      List(
+        Bind(
+          "Point",
+          TypeAbbBind(TypeRecord(List(("x", TypeInt), ("y", TypeInt))))
+        )
       ))
     }
     test("desugar tuple record type") {
@@ -128,9 +142,11 @@ object DesugarSpec extends TestSuite {
           Seq(FSimpleType(FIdentifier("i32")), FSimpleType(FIdentifier("str")))
         )
       ) ==> (List(("Pair", NameBind)),
-      Bind(
-        "Pair",
-        TypeAbbBind(TypeRecord(List(("1", TypeInt), ("2", TypeString))))
+      List(
+        Bind(
+          "Pair",
+          TypeAbbBind(TypeRecord(List(("1", TypeInt), ("2", TypeString))))
+        )
       ))
     }
     test("desugar recursive variant type") {
@@ -161,19 +177,21 @@ object DesugarSpec extends TestSuite {
         )
       ) ==>
         (List(("ListInt", NameBind), ("@ListInt", NameBind)),
-        Bind(
-          "ListInt",
-          TypeAbbBind(
-            TypeRec(
-              "@ListInt",
-              KindStar,
-              TypeVariant(
-                List(
-                  (
-                    "Cons",
-                    TypeRecord(List(("head", TypeInt), ("t", TypeVar(0, 1))))
-                  ),
-                  ("Nil", TypeUnit)
+        List(
+          Bind(
+            "ListInt",
+            TypeAbbBind(
+              TypeRec(
+                "@ListInt",
+                KindStar,
+                TypeVariant(
+                  List(
+                    (
+                      "Cons",
+                      TypeRecord(List(("head", TypeInt), ("t", TypeVar(0, 1))))
+                    ),
+                    ("Nil", TypeUnit)
+                  )
                 )
               )
             )
@@ -191,13 +209,15 @@ object DesugarSpec extends TestSuite {
           )
         )
       ) ==> (List(("Pair2", NameBind), ("@Pair2", NameBind)),
-      Bind(
-        "Pair2",
-        TypeAbbBind(
-          TypeRec(
-            "@Pair2",
-            KindStar,
-            TypeRecord(List(("1", TypeInt), ("2", TypeVar(0, 1))))
+      List(
+        Bind(
+          "Pair2",
+          TypeAbbBind(
+            TypeRec(
+              "@Pair2",
+              KindStar,
+              TypeRecord(List(("1", TypeInt), ("2", TypeVar(0, 1))))
+            )
           )
         )
       ))
@@ -241,9 +261,11 @@ object DesugarSpec extends TestSuite {
           )
         )
       ) ==> (List(("IntToString", NameBind)),
-      Bind(
-        "IntToString",
-        TypeAbbBind(TypeArrow(TypeInt, TypeString))
+      List(
+        Bind(
+          "IntToString",
+          TypeAbbBind(TypeArrow(TypeInt, TypeString))
+        )
       ))
     }
     test("desugar type recursive function abbreviation") {
@@ -257,10 +279,12 @@ object DesugarSpec extends TestSuite {
           )
         )
       ) ==> (List(("Hungry", NameBind), ("@Hungry", NameBind)),
-      Bind(
-        "Hungry",
-        TypeAbbBind(
-          TypeRec("@Hungry", KindStar, TypeArrow(TypeInt, TypeVar(0, 1)))
+      List(
+        Bind(
+          "Hungry",
+          TypeAbbBind(
+            TypeRec("@Hungry", KindStar, TypeArrow(TypeInt, TypeVar(0, 1)))
+          )
         )
       ))
     }
@@ -280,15 +304,17 @@ object DesugarSpec extends TestSuite {
         )
       ) ==> (
         List(("Point", NameBind), ("T", NameBind)),
-        Bind(
-          "Point",
-          TypeAbbBind(
-            TypeAbs(
-              "T",
-              TypeRecord(List(("x", TypeVar(0, 1)), ("y", TypeVar(0, 1))))
+        List(
+          Bind(
+            "Point",
+            TypeAbbBind(
+              TypeAbs(
+                "T",
+                TypeRecord(List(("x", TypeVar(0, 1)), ("y", TypeVar(0, 1))))
+              )
             )
           )
-        ),
+        )
       )
     }
     test("desugar parametric variant type") {
@@ -305,15 +331,17 @@ object DesugarSpec extends TestSuite {
           )
         )
       ) ==> (List(("Option", NameBind), ("T", NameBind)),
-      Bind(
-        "Option",
-        TypeAbbBind(
-          TypeAbs(
-            "T",
-            TypeVariant(
-              List(
-                ("None", TypeUnit),
-                ("Some", TypeRecord(List(("1", TypeVar(0, 1)))))
+      List(
+        Bind(
+          "Option",
+          TypeAbbBind(
+            TypeAbs(
+              "T",
+              TypeVariant(
+                List(
+                  ("None", TypeUnit),
+                  ("Some", TypeRecord(List(("1", TypeVar(0, 1)))))
+                )
               )
             )
           )
@@ -344,23 +372,25 @@ object DesugarSpec extends TestSuite {
           )
         )
       ) ==> (List(("List", NameBind), ("@List", NameBind), ("A", NameBind)),
-      Bind(
-        "List",
-        TypeAbbBind(
-          TypeAbs(
-            "A",
-            TypeRec(
-              "@List",
-              KindArrow(KindStar, KindStar),
-              TypeVariant(
-                List(
-                  ("Nil", TypeUnit),
-                  (
-                    "Cons",
-                    TypeRecord(
-                      List(
-                        ("1", TypeVar(1, 2)),
-                        ("2", TypeApp(TypeVar(0, 2), TypeVar(1, 2)))
+      List(
+        Bind(
+          "List",
+          TypeAbbBind(
+            TypeAbs(
+              "A",
+              TypeRec(
+                "@List",
+                KindArrow(KindStar, KindStar),
+                TypeVariant(
+                  List(
+                    ("Nil", TypeUnit),
+                    (
+                      "Cons",
+                      TypeRecord(
+                        List(
+                          ("1", TypeVar(1, 2)),
+                          ("2", TypeApp(TypeVar(0, 2), TypeVar(1, 2)))
+                        )
                       )
                     )
                   )
@@ -379,9 +409,11 @@ object DesugarSpec extends TestSuite {
           FFuncType(Seq(), FSimpleType(FIdentifier("T")))
         )
       ) ==> (List(("Function0", NameBind), ("T", NameBind)),
-      Bind(
-        "Function0",
-        TypeAbbBind(TypeAbs("T", TypeArrow(TypeUnit, TypeVar(0, 1))))
+      List(
+        Bind(
+          "Function0",
+          TypeAbbBind(TypeAbs("T", TypeArrow(TypeUnit, TypeVar(0, 1))))
+        )
       ))
     }
     test("desugar type function1 abbreviation") {
@@ -397,10 +429,12 @@ object DesugarSpec extends TestSuite {
           )
         )
       ) ==> (List(("Function1", NameBind), ("B", NameBind), ("A", NameBind)),
-      Bind(
-        "Function1",
-        TypeAbbBind(
-          TypeAbs("A", TypeAbs("B", TypeArrow(TypeVar(1, 2), TypeVar(0, 2))))
+      List(
+        Bind(
+          "Function1",
+          TypeAbbBind(
+            TypeAbs("A", TypeAbs("B", TypeArrow(TypeVar(1, 2), TypeVar(0, 2))))
+          )
         )
       ))
     }
@@ -427,18 +461,20 @@ object DesugarSpec extends TestSuite {
           ("B", NameBind),
           ("A", NameBind)
         ),
-        Bind(
-          "Function2",
-          TypeAbbBind(
-            TypeAbs(
-              "A",
+        List(
+          Bind(
+            "Function2",
+            TypeAbbBind(
               TypeAbs(
-                "B",
+                "A",
                 TypeAbs(
-                  "C",
-                  TypeArrow(
-                    TypeVar(2, 3),
-                    TypeArrow(TypeVar(1, 3), TypeVar(0, 3))
+                  "B",
+                  TypeAbs(
+                    "C",
+                    TypeArrow(
+                      TypeVar(2, 3),
+                      TypeArrow(TypeVar(1, 3), TypeVar(0, 3))
+                    )
                   )
                 )
               )
@@ -460,9 +496,11 @@ object DesugarSpec extends TestSuite {
             )
           )
         )
-      ) ==> (List(("CurriedInt", NameBind)), Bind(
-        "CurriedInt",
-        TypeAbbBind(TypeArrow(TypeInt, TypeArrow(TypeInt, TypeInt)))
+      ) ==> (List(("CurriedInt", NameBind)), List(
+        Bind(
+          "CurriedInt",
+          TypeAbbBind(TypeArrow(TypeInt, TypeArrow(TypeInt, TypeInt)))
+        )
       ))
     }
     test("desugar algebraic data type with three type parameters") {
@@ -497,31 +535,33 @@ object DesugarSpec extends TestSuite {
           ("B", NameBind),
           ("A", NameBind)
         ),
-        Bind(
-          "DataPoint",
-          TypeAbbBind(
-            TypeAbs(
-              "A",
+        List(
+          Bind(
+            "DataPoint",
+            TypeAbbBind(
               TypeAbs(
-                "B",
+                "A",
                 TypeAbs(
-                  "C",
-                  TypeRec(
-                    "@DataPoint",
-                    KindArrow(
-                      KindStar,
-                      KindArrow(KindStar, KindArrow(KindStar, KindStar))
-                    ),
-                    TypeRecord(
-                      List(
-                        (
-                          "1",
-                          TypeApp(
+                  "B",
+                  TypeAbs(
+                    "C",
+                    TypeRec(
+                      "@DataPoint",
+                      KindArrow(
+                        KindStar,
+                        KindArrow(KindStar, KindArrow(KindStar, KindStar))
+                      ),
+                      TypeRecord(
+                        List(
+                          (
+                            "1",
                             TypeApp(
-                              TypeApp(TypeVar(0, 4), TypeVar(1, 4)),
-                              TypeVar(2, 4)
-                            ),
-                            TypeVar(3, 4)
+                              TypeApp(
+                                TypeApp(TypeVar(0, 4), TypeVar(1, 4)),
+                                TypeVar(2, 4)
+                              ),
+                              TypeVar(3, 4)
+                            )
                           )
                         )
                       )
@@ -531,17 +571,131 @@ object DesugarSpec extends TestSuite {
               )
             )
           )
-        ),
+        )
       )
     }
-    test("desugar func decl") {}
+    test("desugar function with 1 * 2") {
+      desugar(
+        FFuncDecl(
+          FFuncSig(
+            FIdentifier("one_and_two"),
+            None,
+            None,
+            FSimpleType(FIdentifier("i32"), None)
+          ),
+          Seq(FMultiplication(FInt(1), FInt(2)))
+        ),
+        List(("int_mp", NameBind)) // Built-in function.
+      ) ==> (List(("one_and_two", NameBind), ("int_mp", NameBind)),
+      List(
+        Bind(
+          "one_and_two",
+          TermAbbBind(
+            TermAbs(
+              "one_and_two",
+              TypeUnit,
+              TermApp(TermApp(TermVar(0, 1), TermInt(1)), TermInt(2)),
+              Some(TypeInt)
+            )
+          )
+        )
+      ))
+    }
+    test("desugar function with additive expression") {
+      desugar(
+        FFuncDecl(
+          FFuncSig(
+            FIdentifier("sum"),
+            None,
+            Some(
+              Seq(
+                FParam(
+                  FIdentifier("x"),
+                  FSimpleType(FIdentifier("i32"))
+                ),
+                FParam(
+                  FIdentifier("y"),
+                  FSimpleType(FIdentifier("i32"))
+                )
+              )
+            ),
+            FSimpleType(FIdentifier("i32"), None)
+          ),
+          Seq(
+            FAddition(
+              FVar("x"),
+              FVar("y")
+            )
+          )
+        ),
+        List(("int_add", NameBind)) // Built-in function.
+      ) ==> (List(
+        ("sum", NameBind),
+        ("y", NameBind),
+        ("x", NameBind),
+        ("int_add", NameBind)
+      ),
+      List(
+        Bind(
+          "sum",
+          TermAbbBind(
+            TermAbs(
+              "sum",
+              TypeInt,
+              TermAbs(
+                "_",
+                TypeInt,
+                TermApp(TermApp(TermVar(2, 3), TermVar(1, 3)), TermVar(0, 3)),
+                None
+              ),
+              Some(TypeInt)
+            )
+          )
+        )
+      ))
+    }
+    test("desugar function with simple call expressions") {
+      desugar(
+        FFuncDecl(
+          FFuncSig(
+            FIdentifier("sum_three_and_two"),
+            None,
+            None,
+            FSimpleType(FIdentifier("i32"), None)
+          ),
+          Seq(
+            FApp(
+              FVar("sum"),
+              Seq(Some(Seq(FInt(3), FInt(2))))
+            )
+          )
+        ),
+        List(("sum", NameBind))
+      ) ==> (List(("sum_three_and_two", NameBind), ("sum", NameBind)),
+      List(
+        Bind(
+          "sum_three_and_two",
+          TermAbbBind(
+            TermAbs(
+              "sum_three_and_two",
+              TypeUnit,
+              TermApp(TermApp(TermVar(0, 1), TermInt(3)), TermInt(2)),
+              Some(TypeInt)
+            )
+          )
+        )
+      ))
+    }
+    test("desugar function with record data constructor") {}
+    test("desugar function with variant data constructor") {}
+    test("desugar recursive function") {}
     test("desugar type func decls") {}
     // TODO: Learn how to represent traits (type classes) in the lambda calculus.
     // test("desugar trait decl") {}
     // test("desugar trait instance decl") {}
   }
 
-  def desugar(d: FDecl): (Context, Bind) = {
-    Desugar.bind(d).run(Context.empty).value
+  def desugar(d: FDecl, ctx: Context = Context.empty): (Context, List[Bind]) = {
+    Desugar.bind(d).run(ctx).value
   }
 }
