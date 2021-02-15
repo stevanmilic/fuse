@@ -968,8 +968,8 @@ object DesugarSpec extends TestSuite {
           ),
           Seq(FMultiplication(FInt(1), FInt(2)))
         ),
-        List(("int_mp", NameBind)) // Built-in function.
-      ) ==> (List(("one_and_two", NameBind), ("int_mp", NameBind)),
+        List(("&multiply", NameBind)) // Built-in function.
+      ) ==> (List(("one_and_two", NameBind), ("&multiply", NameBind)),
       List(
         Bind(
           "one_and_two",
@@ -1011,25 +1011,35 @@ object DesugarSpec extends TestSuite {
             )
           )
         ),
-        List(("int_add", NameBind)) // Built-in function.
+        List(("&add", NameBind)) // Built-in function.
       ) ==> (List(
         ("sum", NameBind),
         ("y", NameBind),
         ("x", NameBind),
-        ("int_add", NameBind)
+        ("^sum", NameBind),
+        ("&add", NameBind)
       ),
       List(
         Bind(
           "sum",
           TermAbbBind(
-            TermAbs(
-              "x",
-              TypeInt,
+            TermFix(
               TermAbs(
-                "y",
-                TypeInt,
-                TermApp(TermApp(TermVar(2, 3), TermVar(1, 3)), TermVar(0, 3)),
-                Some(TypeInt)
+                "^sum",
+                TypeArrow(TypeInt, TypeArrow(TypeInt, TypeInt)),
+                TermAbs(
+                  "x",
+                  TypeInt,
+                  TermAbs(
+                    "y",
+                    TypeInt,
+                    TermApp(
+                      TermApp(TermVar(3, 4), TermVar(1, 4)),
+                      TermVar(0, 4)
+                    ),
+                    Some(TypeInt)
+                  )
+                )
               )
             )
           )
@@ -1068,9 +1078,321 @@ object DesugarSpec extends TestSuite {
         )
       ))
     }
-    test("desugar function with record data constructor") {}
-    test("desugar function with variant data constructor") {}
+    test("desugar function with record data constructor") {
+      desugar(
+        FFuncDecl(
+          FFuncSig(
+            FIdentifier("zero_point"),
+            None,
+            None,
+            FSimpleType(FIdentifier("Point"), None)
+          ),
+          Seq(
+            FApp(
+              FVar("Point"),
+              Seq(Some(Seq(FInt(0), FInt(0))))
+            )
+          )
+        ),
+        List(("Point", NameBind))
+      ) ==> (List(("zero_point", NameBind), ("Point", NameBind)),
+      List(
+        Bind(
+          "zero_point",
+          TermAbbBind(
+            TermAbs(
+              "_",
+              TypeUnit,
+              TermApp(TermApp(TermVar(0, 1), TermInt(0)), TermInt(0)),
+              Some(TypeVar(0, 1))
+            )
+          )
+        )
+      ))
+    }
+    test("desugar function with variant data constructor") {
+      desugar(
+        FFuncDecl(
+          FFuncSig(
+            FIdentifier("some_value"),
+            None,
+            Some(
+              Seq(
+                FParam(
+                  FIdentifier("x"),
+                  FSimpleType(FIdentifier("i32"))
+                )
+              )
+            ),
+            FSimpleType(FIdentifier("OptionInt"), None)
+          ),
+          Seq(
+            FApp(
+              FVar("Some"),
+              Seq(Some(Seq(FVar("x"))))
+            )
+          )
+        ),
+        List(
+          ("Some", NameBind),
+          ("OptionInt", NameBind)
+        )
+      ) ==> (List(
+        ("some_value", NameBind),
+        ("x", NameBind),
+        ("^some_value", NameBind),
+        ("Some", NameBind),
+        ("OptionInt", NameBind)
+      ),
+      List(
+        Bind(
+          "some_value",
+          TermAbbBind(
+            TermFix(
+              TermAbs(
+                "^some_value",
+                TypeArrow(TypeInt, TypeVar(1, 2)),
+                TermAbs(
+                  "x",
+                  TypeInt,
+                  TermApp(TermVar(2, 4), TermVar(0, 4)),
+                  Some(TypeVar(1, 2))
+                )
+              )
+            )
+          )
+        )
+      ))
+    }
+    test("desugar function with type parameters") {
+      desugar(
+        FFuncDecl(
+          FFuncSig(
+            FIdentifier("some_t_value"),
+            Some(
+              Seq(FTypeParam(FIdentifier("T")))
+            ),
+            Some(
+              Seq(
+                FParam(
+                  FIdentifier("x"),
+                  FSimpleType(FIdentifier("T"))
+                )
+              )
+            ),
+            FSimpleType(
+              FIdentifier("Option"),
+              Some(Seq(FSimpleType(FIdentifier("T"))))
+            )
+          ),
+          Seq(
+            FApp(
+              FVar("Some"),
+              Seq(Some(Seq(FVar("x"))))
+            )
+          )
+        ),
+        List(
+          ("Some", NameBind),
+          ("Option", NameBind)
+        )
+      ) ==> (List(
+        ("some_t_value", NameBind),
+        ("x", NameBind),
+        ("^some_t_value", NameBind),
+        ("T", NameBind),
+        ("Some", NameBind),
+        ("Option", NameBind)
+      ),
+      List(
+        Bind(
+          "some_t_value",
+          TermAbbBind(
+            TermTAbs(
+              "T",
+              TermFix(
+                TermAbs(
+                  "^some_t_value",
+                  TypeArrow(
+                    TypeVar(0, 3),
+                    TypeApp(TypeVar(2, 3), TypeVar(0, 3))
+                  ),
+                  TermAbs(
+                    "x",
+                    TypeVar(1, 4),
+                    TermApp(TermVar(3, 5), TermVar(0, 5)),
+                    Some(TypeApp(TypeVar(2, 3), TypeVar(0, 3)))
+                  )
+                )
+              )
+            )
+          )
+        )
+      ))
+    }
+    test("desugar function with match expresion with literals") {
+      desugar(
+        FFuncDecl(
+          FFuncSig(
+            FIdentifier("zero_to_one"),
+            None,
+            Some(
+              Seq(
+                FParam(
+                  FIdentifier("x"),
+                  FSimpleType(FIdentifier("i32"))
+                )
+              )
+            ),
+            FSimpleType(FIdentifier("i32"), None)
+          ),
+          Seq(
+            FMatch(
+              FVar("x"),
+              Seq(
+                FCase(
+                  Seq(FInt(0)),
+                  None,
+                  Seq(FInt(1))
+                ),
+                FCase(
+                  Seq(FWildCardPattern),
+                  None,
+                  Seq(FVar("x"))
+                )
+              )
+            )
+          )
+        )
+      ) ==> (List(
+        ("zero_to_one", NameBind),
+        ("x", NameBind),
+        ("^zero_to_one", NameBind)
+      ),
+      List(
+        Bind(
+          "zero_to_one",
+          TermAbbBind(
+            TermFix(
+              TermAbs(
+                "^zero_to_one",
+                TypeArrow(TypeInt, TypeInt),
+                TermAbs(
+                  "x",
+                  TypeInt,
+                  TermMatch(
+                    TermVar(0, 2),
+                    List(
+                      (TermInt(0), TermInt(1)),
+                      (DefaultPattern, TermVar(0, 2))
+                    )
+                  )
+                )
+              )
+            )
+          )
+        )
+      ))
+    }
+    test("desugar function with match expresion with adt unfolding") {
+      desugar(
+        FFuncDecl(
+          FFuncSig(
+            FIdentifier("some_plus_one"),
+            Some(
+              Seq(FTypeParam(FIdentifier("T")))
+            ),
+            Some(
+              Seq(
+                FParam(
+                  FIdentifier("x"),
+                  FSimpleType(FIdentifier("T"))
+                )
+              )
+            ),
+            FSimpleType(FIdentifier("i32"), None)
+          ),
+          Seq(
+            FMatch(
+              FVar("x"),
+              Seq(
+                FCase(
+                  Seq(
+                    FVariantOrRecordPattern(
+                      FIdentifier("Some"),
+                      Seq(FIdentifierPattern("v"))
+                    )
+                  ),
+                  None,
+                  Seq(FAddition(FVar("v"), FInt(1)))
+                ),
+                FCase(
+                  Seq(FIdentifierPattern("None")),
+                  None,
+                  Seq(FInt(0))
+                )
+              )
+            )
+          )
+        ),
+        List(
+          ("Some", NameBind),
+          ("Option", NameBind),
+          ("&add", NameBind)
+        ) // Built-in function.
+      ) ==> (List(
+        ("some_plus_one", NameBind),
+        ("x", NameBind),
+        ("^some_plus_one", NameBind),
+        ("T", NameBind),
+        ("Some", NameBind),
+        ("Option", NameBind),
+        ("&add", NameBind)
+      ),
+      List(
+        Bind(
+          "some_plus_one",
+          TermAbbBind(
+            TermTAbs(
+              "T",
+              TermFix(
+                TermAbs(
+                  "^some_plus_one",
+                  TypeArrow(
+                    TypeApp(TypeVar(2, 4), TypeVar(0, 4)),
+                    TypeInt
+                  ),
+                  TermAbs(
+                    "x",
+                    TypeApp(TypeVar(3, 5), TypeVar(1, 5)),
+                    TermMatch(
+                      TermVar(0, 6),
+                      List(
+                        (
+                          NodePattern("Some", List("v")),
+                          TermApp(
+                            TermApp(TermVar(6, 7), TermVar(0, 7)),
+                            TermInt(1)
+                          )
+                        ),
+                        (NodePattern("None", List()), TermInt(0))
+                      )
+                    ),
+                    Some(TypeInt)
+                  )
+                )
+              )
+            )
+          )
+        )
+      ))
+    }
+    test("desugar function with match expresion with record unfolding") {}
     test("desugar recursive function") {}
+    test("desugar function with let expression") {}
+    test("desugar function with sequence o let expressions") {}
+    test("desugar function with let expression with lambda expression") {}
+    test("deusgar function with call expression wtih lambda expression") {}
     test("desugar type func decls") {}
     // TODO: Learn how to represent traits (type classes) in the lambda calculus.
     // test("desugar trait decl") {}

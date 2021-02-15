@@ -22,15 +22,16 @@ case object TypeFloat extends Type
 case object TypeInt extends Type
 
 sealed trait Term
+sealed trait Pattern
 
 // Abstraction
+case class TermFix(t: Term) extends Term
 case class TermAbs(i: String, t: Type, e: Term, r: Option[Type] = None)
     extends Term
 // Expressions
 case class TermVar(i1: Integer, i2: Integer) extends Term
 case class TermApp(f: Term, v: Term) extends Term
-case class TermCase(i: String, v: String, e: Term)
-case class TermMatch(t: Term, c: List[TermCase]) extends Term
+case class TermMatch(t: Term, c: List[(Pattern, Term)]) extends Term
 case class TermLet(i: String, t1: Term, t2: Term) extends Term
 case class TermProj(t: Term, i: String) extends Term
 // ADT
@@ -42,12 +43,15 @@ case class TermUnfold(t: Type) extends Term
 case class TermTAbs(i: String, t: Term) extends Term
 case class TermTApp(t: Term, typ: Type) extends Term
 // Literals
-case class TermFloat(f: Float) extends Term
-case class TermInt(i: Int) extends Term
-case class TermString(s: String) extends Term
-case object TermTrue extends Term
-case object TermFalse extends Term
-case object TermUnit extends Term
+case class TermFloat(f: Float) extends Term with Pattern
+case class TermInt(i: Int) extends Term with Pattern
+case class TermString(s: String) extends Term with Pattern
+case object TermTrue extends Term with Pattern
+case object TermFalse extends Term with Pattern
+case object TermUnit extends Term with Pattern
+
+case class NodePattern(tag: String, vars: List[String]) extends Pattern
+case object DefaultPattern extends Pattern
 
 sealed trait Binding
 

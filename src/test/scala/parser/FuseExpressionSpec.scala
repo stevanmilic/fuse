@@ -109,7 +109,7 @@ object FuseExpressionSpec extends TestSuite {
         FFloat(3.14.toFloat)
       )
     }
-    test("parse call expressions with dot accessor and multiple arguments") {
+    test("parse call expressions with  multiple arguments") {
       parse("l.fold_left(0)(sum)") ==> FApp(
         FProj(
           FVar("l"),
