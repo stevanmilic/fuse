@@ -1284,9 +1284,10 @@ object DesugarSpec extends TestSuite {
                     TermVar(0, 2),
                     List(
                       (TermInt(0), TermInt(1)),
-                      (DefaultPattern, TermVar(0, 2))
+                      (PatternDefault, TermVar(0, 2))
                     )
-                  )
+                  ),
+                  Some(TypeInt)
                 )
               )
             )
@@ -1306,7 +1307,10 @@ object DesugarSpec extends TestSuite {
               Seq(
                 FParam(
                   FIdentifier("x"),
-                  FSimpleType(FIdentifier("T"))
+                  FSimpleType(
+                    FIdentifier("Option"),
+                    Some(Seq(FSimpleType(FIdentifier("T"))))
+                  )
                 )
               )
             ),
@@ -1342,6 +1346,7 @@ object DesugarSpec extends TestSuite {
         ) // Built-in function.
       ) ==> (List(
         ("some_plus_one", NameBind),
+        ("v", NameBind),
         ("x", NameBind),
         ("^some_plus_one", NameBind),
         ("T", NameBind),
@@ -1369,13 +1374,13 @@ object DesugarSpec extends TestSuite {
                       TermVar(0, 6),
                       List(
                         (
-                          NodePattern("Some", List("v")),
+                          PatternNode("Some", List("v")),
                           TermApp(
                             TermApp(TermVar(6, 7), TermVar(0, 7)),
                             TermInt(1)
                           )
                         ),
-                        (NodePattern("None", List()), TermInt(0))
+                        (PatternNode("None", List()), TermInt(0))
                       )
                     ),
                     Some(TypeInt)
@@ -1387,12 +1392,11 @@ object DesugarSpec extends TestSuite {
         )
       ))
     }
-    test("desugar function with match expresion with record unfolding") {}
     test("desugar recursive function") {}
     test("desugar function with let expression") {}
-    test("desugar function with sequence o let expressions") {}
+    test("desugar function with sequence of let expressions") {}
     test("desugar function with let expression with lambda expression") {}
-    test("deusgar function with call expression wtih lambda expression") {}
+    test("desuagar function with call expression wtih lambda expression") {}
     test("desugar type func decls") {}
     // TODO: Learn how to represent traits (type classes) in the lambda calculus.
     // test("desugar trait decl") {}

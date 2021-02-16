@@ -56,13 +56,13 @@ object Desugar {
     case _ => throw new Exception("not supported decl")
   }
 
-  def bindTypeAbb(i: String, t: Type): State[Context, Bind] = State { ctx =>
-    (Context.addName(ctx, i), Bind(i, TypeAbbBind(t)))
-  }
+  def bindTypeAbb(i: String, t: Type): State[Context, Bind] = for {
+    _ <- addNameToContext(i)
+  } yield Bind(i, TypeAbbBind(t))
 
-  def bindTermAbb(i: String, t: Term): State[Context, Bind] = State { ctx =>
-    (Context.addName(ctx, i), Bind(i, TermAbbBind(t)))
-  }
+  def bindTermAbb(i: String, t: Term): State[Context, Bind] = for {
+    _ <- addNameToContext(i)
+  } yield Bind(i, TermAbbBind(t))
 
   // # Bind # region_end
 
@@ -110,40 +110,79 @@ object Desugar {
   def toTermExpr(e: List[FExpr]): State[Context, Term] =
     e.traverse(toTerm(_)).map(_.last)
 
-  def toTerm(e: FExpr): State[Context, Term] = State { ctx =>
+  def toTerm(e: FExpr): State[Context, Term] =
     e match {
       case FApp(e, args) =>
         val v = e :: args.toList.flatten.flatten
-        v.traverse(toTerm(_)).map(_.reduceLeft(TermApp(_, _))).run(ctx).value
+        v.traverse(toTerm(_)).map(_.reduceLeft(TermApp(_, _)))
+      case FMatch(e, cases) =>
+        for {
+          me <- toTerm(e)
+          mc <- cases.toList.traverse(c => {
+            val exprList = c.e.toList
+            c.p.toList.traverse(toMatchCase(_, exprList))
+          })
+        } yield TermMatch(me, mc.flatten)
       case FMultiplication(i1, i2) =>
-        toTermOperator("&multiply", ctx, i1, i2)
+        toTermOperator("&multiply", i1, i2)
       // TODO: Add other operators.
       case FAddition(i1, i2) =>
-        toTermOperator("&add", ctx, i1, i2)
+        toTermOperator("&add", i1, i2)
       case FVar(i) =>
-        toTermVar(i, ctx) match {
-          case Some(v) => (ctx, v)
-          case None    => throw new Exception("Var not found")
+        State { ctx =>
+          toTermVar(i, ctx) match {
+            case Some(v) => (ctx, v)
+            case None    => throw new Exception("Var not found")
+          }
         }
-      case FBool(true)  => (ctx, TermTrue)
-      case FBool(false) => (ctx, TermFalse)
-      case FInt(i)      => (ctx, TermInt(i))
-      case FFloat(f)    => (ctx, TermFloat(f))
+      case FBool(true)  => State.pure(TermTrue)
+      case FBool(false) => State.pure(TermFalse)
+      case FInt(i)      => State.pure(TermInt(i))
+      case FFloat(f)    => State.pure(TermFloat(f))
+      case FString(s)   => State.pure(TermString(s))
       case _            => throw new Exception("not supported expr")
     }
-  }
 
   def toTermOperator(
       func: String,
-      ctx: Context,
       e1: FExpr,
       e2: FExpr
-  ): (Context, TermApp) = {
+  ): State[Context, Term] = State { ctx =>
     // TODO: Handle the case when the func isn't found in the context.
     val funcVar = toTermVar(func, ctx).get
     val (c1, t1) = toTerm(e1).run(ctx).value
     val (c2, t2) = toTerm(e2).run(ctx).value
     (c2, TermApp(TermApp(funcVar, t1), t2))
+  }
+
+  def toMatchCase(
+      p: FPattern,
+      e: List[FExpr]
+  ): State[Context, (Pattern, Term)] = for {
+    p <- toPattern(p)
+    ce <- toTermExpr(e)
+  } yield (p, ce)
+
+  def toPattern(p: FPattern): State[Context, Pattern] = p match {
+    case FIdentifierPattern(v, _) => State.pure(PatternNode(v))
+    case FVariantOrRecordPattern(t, ps) =>
+      for {
+        np <- ps.toList.traverse(toPattern(_))
+        vars <- np.traverse(i =>
+          i match {
+            case PatternNode(v, List()) => addNameToContext(v)
+            case PatternDefault         => State.pure[Context, String]("_")
+            case _                      => throw new Exception("not supported nested pattern")
+          }
+        )
+      } yield PatternNode(t.value, vars)
+    case FWildCardPattern => State.pure(PatternDefault)
+    case FBool(true)      => State.pure(TermTrue)
+    case FBool(false)     => State.pure(TermFalse)
+    case FInt(i)          => State.pure(TermInt(i))
+    case FFloat(f)        => State.pure(TermFloat(f))
+    case FString(s)       => State.pure(TermString(s))
+    case _                => throw new Exception("not supported case")
   }
 
   def toTermVar(i: String, c: Context): Option[TermVar] =
@@ -209,12 +248,9 @@ object Desugar {
       }
     }
 
-  def withRecType(i: String, k: Kind): State[Context, Type => TypeRec] = State {
-    ctx =>
-      val ri = toRecId(i)
-      val c1 = Context.addName(ctx, ri)
-      (c1, t => TypeRec(ri, k, t))
-  }
+  def withRecType(i: String, k: Kind): State[Context, Type => TypeRec] = for {
+    ri <- addNameToContext(toRecId(i))
+  } yield t => TypeRec(ri, k, t)
 
   // # Type # region_end
 
@@ -289,17 +325,13 @@ object Desugar {
     }
 
   def withTermTypeAbs(typ: FTypeParamClause): State[Context, Term => Term] =
-    State { ctx =>
-      typ match {
-        case Some(p) => {
-          val ids = p.map(_.i.value).toList
-          // First add all the type variables in the context.
-          val c1 = ids.foldLeft(ctx)((acc, n) => Context.addName(acc, n))
-          // Use the type to bulid type abstraction containg the type variables.
-          (c1, t => ids.foldRight(t)((i, acc) => TermTAbs(i, acc)))
-        }
-        case None => (ctx, identity)
-      }
+    typ match {
+      case Some(p) =>
+        val ids = p.map(_.i.value).toList
+        for {
+          _ <- ids.traverse(addNameToContext(_))
+        } yield t => ids.foldRight(t)((i, acc) => TermTAbs(i, acc))
+      case None => State.pure(identity)
     }
 
   def withRecordAbs(
@@ -308,7 +340,7 @@ object Desugar {
     State { ctx =>
       val params = values.map { case (i, t) => (withTupleParamId(i), t) }
       // Then add all the parameters as term variables in the context.
-      val c1 = params.foldLeft(ctx)((acc, v) => Context.addName(acc, v._1))
+      val c1 = params.traverse(p => addNameToContext(p._1)).runS(ctx).value
       // Use the term to create term abstractions – equal to a function.
       val termAbsFunc = (term: Term) =>
         params
@@ -384,6 +416,9 @@ object Desugar {
 
   def toCtxIndex(ctx: Context, i: String): Option[Int] =
     Context.nameToIndex(ctx, i).orElse(Context.nameToIndex(ctx, toRecId(i)))
+
+  def addNameToContext(n: String): State[Context, String] =
+    State(ctx => (Context.addName(ctx, n), n))
 
   def toRecId(i: String) = s"@$i"
 
