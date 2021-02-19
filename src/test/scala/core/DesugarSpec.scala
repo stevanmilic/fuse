@@ -1392,7 +1392,118 @@ object DesugarSpec extends TestSuite {
         )
       ))
     }
-    test("desugar recursive function") {}
+    test("desugar recursive function") {
+      desugar(
+        FFuncDecl(
+          FFuncSig(
+            FIdentifier("fib"),
+            None,
+            Some(
+              Seq(
+                FParam(
+                  FIdentifier("n"),
+                  FSimpleType(FIdentifier("i32"))
+                ),
+                FParam(
+                  FIdentifier("a"),
+                  FSimpleType(FIdentifier("i32"))
+                ),
+                FParam(
+                  FIdentifier("b"),
+                  FSimpleType(FIdentifier("i32"))
+                )
+              )
+            ),
+            FSimpleType(FIdentifier("i32"), None)
+          ),
+          Seq(
+            FMatch(
+              FVar("n"),
+              Seq(
+                FCase(
+                  Seq(FInt(0)),
+                  None,
+                  Seq(FVar("b"))
+                ),
+                FCase(
+                  Seq(FWildCardPattern),
+                  None,
+                  Seq(
+                    FApp(
+                      FVar("fib"),
+                      Seq(
+                        Some(Seq(FSubtraction(FVar("n"), FInt(1)))),
+                        Some(Seq(FAddition(FVar("a"), FVar("b"))))
+                      )
+                    )
+                  )
+                )
+              )
+            )
+          )
+        ),
+        List(("&sub", NameBind), ("&add", NameBind)) // Built-in function.
+      ) ==> (List(
+        ("fib", NameBind),
+        ("b", NameBind),
+        ("a", NameBind),
+        ("n", NameBind),
+        ("^fib", NameBind),
+        ("&sub", NameBind),
+        ("&add", NameBind)
+      ),
+      List(
+        Bind(
+          "fib",
+          TermAbbBind(
+            TermFix(
+              TermAbs(
+                "^fib",
+                TypeArrow(
+                  TypeInt,
+                  TypeArrow(TypeInt, TypeArrow(TypeInt, TypeInt))
+                ),
+                TermAbs(
+                  "n",
+                  TypeInt,
+                  TermAbs(
+                    "a",
+                    TypeInt,
+                    TermAbs(
+                      "b",
+                      TypeInt,
+                      TermMatch(
+                        TermVar(2, 6),
+                        List(
+                          (TermInt(0), TermVar(0, 6)),
+                          (
+                            PatternDefault,
+                            TermApp(
+                              TermApp(
+                                TermVar(3, 6),
+                                TermApp(
+                                  TermApp(TermVar(4, 6), TermVar(2, 6)),
+                                  TermInt(1)
+                                )
+                              ),
+                              TermApp(
+                                TermApp(TermVar(5, 6), TermVar(1, 6)),
+                                TermVar(0, 6)
+                              )
+                            )
+                          )
+                        )
+                      ),
+                      Some(TypeInt)
+                    )
+                  )
+                )
+              )
+            )
+          )
+        )
+      ))
+    }
     test("desugar function with let expression") {}
     test("desugar function with sequence of let expressions") {}
     test("desugar function with let expression with lambda expression") {}

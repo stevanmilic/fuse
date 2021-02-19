@@ -128,6 +128,8 @@ object Desugar {
       // TODO: Add other operators.
       case FAddition(i1, i2) =>
         toTermOperator("&add", i1, i2)
+      case FSubtraction(i1, i2) =>
+        toTermOperator("&sub", i1, i2)
       case FVar(i) =>
         State { ctx =>
           toTermVar(i, ctx) match {
@@ -185,9 +187,11 @@ object Desugar {
     case _                => throw new Exception("not supported case")
   }
 
-  def toTermVar(i: String, c: Context): Option[TermVar] =
-    Context.nameToIndex(c, i) match {
-      case Some(indx) => Some(TermVar(indx, c.length))
+  def toTermVar(i: String, ctx: Context): Option[TermVar] =
+    Context
+      .nameToIndex(ctx, i)
+      .orElse(Context.nameToIndex(ctx, toRecAbsId(i))) match {
+      case Some(indx) => Some(TermVar(indx, ctx.length))
       case None       => None
     }
 
