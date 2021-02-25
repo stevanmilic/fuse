@@ -88,6 +88,15 @@ object FuseExpressionSpec extends TestSuite {
         FVar("y")
       )
     }
+    test("parse addition and multiplication") {
+      parse("3 * 2 + 1") ==> FAddition(
+        FMultiplication(
+          FInt(3),
+          FInt(2)
+        ),
+        FInt(1)
+      )
+    }
     test("parse simple call expressions") {
       parse("sum(3, 2)") ==> FApp(
         FVar("sum"),
