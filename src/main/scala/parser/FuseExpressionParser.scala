@@ -1,4 +1,4 @@
-package fuse
+package parser
 
 import org.parboiled2._
 import scala.util.Either
@@ -12,19 +12,18 @@ object FuseExpressionParser {
   case class FLetExpr(i: FIdentifier, t: Option[FType], e: Seq[FExpr])
       extends FExpr
 
-  case class FLambdaBinding(i: FIdentifier, t: Option[FType] = None)
-  case class FLambdaExpr(params: Seq[FLambdaBinding], e: Seq[FExpr])
-      extends FExpr
+  case class FBinding(i: FIdentifier, t: Option[FType] = None)
+  case class FAbs(params: Seq[FBinding], e: Seq[FExpr]) extends FExpr
 
   sealed trait FPattern
   case class FIdentifierPattern(value: String, p: Option[FPattern] = None)
       extends FPattern
   object FWildCardPattern extends FPattern
   case class FTuplePattern(s: Seq[FPattern]) extends FPattern
-  case class FSumStructPattern(i: FIdentifier, s: Seq[FPattern])
+  case class FVariantOrRecordPattern(i: FIdentifier, s: Seq[FPattern])
       extends FPattern
   case class FCase(p: Seq[FPattern], guard: Option[FInfixExpr], e: Seq[FExpr])
-  case class FMatchExpr(e: FInfixExpr, c: Seq[FCase]) extends FExpr
+  case class FMatch(e: FInfixExpr, c: Seq[FCase]) extends FExpr
 
   sealed trait FInfixExpr extends FExpr
   case class FAddition(lhs: FInfixExpr, rhs: FInfixExpr) extends FInfixExpr
@@ -43,14 +42,14 @@ object FuseExpressionParser {
   case class FGreaterThanEqual(lhs: FInfixExpr, rhs: FInfixExpr)
       extends FInfixExpr
 
-  case class FExprIdentifier(value: String) extends FInfixExpr
-  case class FMemberExpr(e: FInfixExpr, ids: Seq[FExprIdentifier])
-      extends FInfixExpr
+  case class FVar(value: String) extends FInfixExpr
+  case class FProj(e: FInfixExpr, ids: Seq[FVar]) extends FInfixExpr
   type FArguments = Option[Seq[FExpr]]
-  case class FCallExpr(
+  // NOTE: This is the actual application, but the arguments can be optional
+  // indicating the abstraction accepts a unit.
+  case class FApp(
       e: FExpr,
-      args: FArguments,
-      a: Seq[Either[FArguments, Seq[FExprIdentifier]]] = Seq()
+      args: Seq[FArguments]
   ) extends FInfixExpr
 
   // Literals
@@ -87,17 +86,17 @@ class FuseExpressionParser(val input: ParserInput) extends FuseTypesParser {
     "let" ~ Id ~ (":" ~ Type).? ~ wspStr("=") ~ InlineExpr ~> FLetExpr
   }
   def LambdaExpr = {
-    def Binding = rule { Id ~ (":" ~ Type).? ~> FLambdaBinding }
+    def Binding = rule { Id ~ (":" ~ Type).? ~> FBinding }
     def Bindings = rule { '(' ~ Binding.*(",") ~ ')' }
     rule {
-      (Bindings | Id ~> (i => Seq(FLambdaBinding(i)))) ~ wspStr("=>") ~
-        InlineExpr ~> FLambdaExpr
+      (Bindings | Id ~> (i => Seq(FBinding(i)))) ~ wspStr("=>") ~
+        InlineExpr ~> FAbs
     }
   }
 
   def MatchExpr = {
     def Pattern: Rule1[FPattern] = rule {
-      Id ~ "(" ~ Patterns ~ ")" ~> FSumStructPattern |
+      Id ~ "(" ~ Patterns ~ ")" ~> FVariantOrRecordPattern |
         "(" ~ Patterns ~ ")" ~> FTuplePattern |
         Literal |
         capture("_") ~> (_ => FWildCardPattern) |
@@ -116,7 +115,7 @@ class FuseExpressionParser(val input: ParserInput) extends FuseTypesParser {
         ArmPatterns ~ Guard.? ~ wspStr("=>") ~ InlineExpr ~> FCase
       }
     rule {
-      "match" ~ InfixExpr ~ ":" ~ oneOrMoreWithIndent(Case) ~> FMatchExpr
+      "match" ~ InfixExpr ~ ":" ~ oneOrMoreWithIndent(Case) ~> FMatch
     }
   }
 
@@ -125,23 +124,18 @@ class FuseExpressionParser(val input: ParserInput) extends FuseTypesParser {
       Literal | ExprId | wspStr("(") ~ InfixExpr ~ wspStr(")")
     }
 
-    def DotAccessor = rule { '.' ~ ExprId }
-
     def CallExpr = {
       def ArgumentExpr = rule { LambdaExpr | InfixExpr }
       def ArgumentList = rule { ArgumentExpr.+(",") }
-      def Arguments = { rule { "(" ~ ArgumentList.? ~ ")" } }
-      def CallExprAccessors = rule {
-        Arguments ~> (Left(_)) | DotAccessor.+ ~> (Right(_))
-      }
+      def Arguments = rule { "(" ~ ArgumentList.? ~ ")" }
       rule {
-        (MemberExpr | PrimaryExpr) ~ Arguments ~ CallExprAccessors.* ~> FCallExpr
+        (Proj | PrimaryExpr) ~ Arguments.+ ~> FApp
       }
     }
 
-    def MemberExpr = rule { PrimaryExpr ~ DotAccessor.+ ~> FMemberExpr }
+    def Proj = rule { PrimaryExpr ~ ('.' ~ ExprId).+ ~> FProj }
 
-    def UnaryExpr = rule { CallExpr | MemberExpr | PrimaryExpr }
+    def UnaryExpr = rule { CallExpr | Proj | PrimaryExpr }
 
     def MultiplicativeExpr = rule {
       UnaryExpr ~ (wspStr("*") ~ UnaryExpr ~> FMultiplication |
@@ -189,5 +183,5 @@ class FuseExpressionParser(val input: ParserInput) extends FuseTypesParser {
     str("\"") ~ capture(CharPredicate.All.*) ~ str("\"") ~> FString
   }
 
-  private def ExprId = rule { capture(IdentifierPart) ~> FExprIdentifier }
+  private def ExprId = rule { capture(IdentifierPart) ~> FVar }
 }
