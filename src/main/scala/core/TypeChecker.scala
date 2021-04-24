@@ -10,6 +10,7 @@ import core.Shifting._
 import parser.FuseParser._
 
 import scala.util._
+import scala.annotation.tailrec
 
 object TypeChecker {
 
@@ -191,25 +192,28 @@ object TypeChecker {
       } yield caseExprType
     case TermTag(tag, t1, ty1) =>
       for {
-        tyT1 <- EitherT.liftF(simplifyType(ty1, true))
-        tyTiExpected <- EitherT.fromEither[ContextState](tyT1 match {
-          case TypeVariant(fields) =>
-            fields
-              .find(_._1 == tag)
-              .map(_._2)
-              .toRight(Error.TagVariantFieldNotFound(tag))
-          case _ =>
-            print(tyT1)
-            Left(Error.TagNotVariantType)
-
+        tyS <- EitherT.liftF(simplifyType(ty1))
+        tySVar <- EitherT.fromEither[ContextState](tyS match {
+          case TypeRec(_, _, v @ TypeVariant(_)) => Right(v)
+          case _                                 => Left(Error.TagNotVariantType)
         })
+        tyTiExpected <- EitherT.fromEither[ContextState](
+          tySVar.v
+            .find(_._1 == tag)
+            .map { case (_, ty) => typeSubstituteTop(findRootType(ty1), ty) }
+            .toRight(Error.TagVariantFieldNotFound(tag))
+        )
         tyTi <- pureTypeOf(t1)
         ty <- EitherT(
           isTypeEqual(tyTi, tyTiExpected).map(
-            Either.cond(_, ty1, Error.TagFieldTypeMismatch)
+            Either.cond(
+              _,
+              ty1,
+              Error.TagFieldTypeMismatch
+            )
           )
         )
-      } yield tyT1
+      } yield typeSubstituteTop(ty1, tySVar)
     case TermTrue        => (TypeBool: Type).pure[StateEither]
     case TermFalse       => (TypeBool: Type).pure[StateEither]
     case TermInt(_)      => (TypeInt: Type).pure[StateEither]
@@ -218,6 +222,13 @@ object TypeChecker {
     case TermUnit        => (TypeUnit: Type).pure[StateEither]
     case TermBuiltin(ty) => ty.pure[StateEither]
 
+  }
+
+  @tailrec
+  def findRootType(ty: Type): Type = ty match {
+    case v @ TypeVar(_, _) => v
+    case TypeApp(ty1, ty2) => findRootType(ty1)
+    case _                 => ty
   }
 
   def typeOfPattern(p: Pattern, expr: Type): StateEither[Option[Type]] =
@@ -322,17 +333,13 @@ object TypeChecker {
     }
   }
 
-  def simplifyType(ty: Type, simplifyRec: Boolean = false): ContextState[Type] =
+  def simplifyType(ty: Type): ContextState[Type] =
     for {
       tyT <- ty match {
-        case TypeApp(tyT1, tyT2) =>
-          simplifyType(tyT1, simplifyRec).map(TypeApp(_, tyT2))
-        case TypeRec(_, _, tyT1) if simplifyRec => tyT1.pure[ContextState]
-        case _                                  => ty.pure[ContextState]
+        case TypeApp(tyT1, tyT2) => simplifyType(tyT1).map(TypeApp(_, tyT2))
+        case _                   => ty.pure[ContextState]
       }
-      tyT1 <- computeType(tyT)
-        .semiflatMap(simplifyType(_, simplifyRec))
-        .getOrElse(tyT)
+      tyT1 <- computeType(tyT).semiflatMap(simplifyType(_)).getOrElse(tyT)
     } yield tyT1
 
   def computeType(ty: Type): StateOption[Type] = ty match {

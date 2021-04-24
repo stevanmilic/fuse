@@ -27,10 +27,10 @@ object Shifting {
   def typeSubstituteTop(tyS: Type, tyT: Type): Type =
     typeShift(-1, typeSubstitute(typeShift(1, tyS), 0, tyT))
 
-  def typeSubstitute(tyS: Type, i: Int, tyT: Type): Type =
+  def typeSubstitute(tyS: Type, c: Int, tyT: Type): Type =
     typeMap(
       (j, x, n) => if (x == j) typeShift(j, tyS) else TypeVar(x, n),
-      i,
+      c,
       tyT
     )
 

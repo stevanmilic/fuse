@@ -395,7 +395,25 @@ object TypeCheckerSpec extends TestSuite {
             )
           )
         )
-      ) ==> Right(List())
+      ) ==> Right(
+        List(
+          ("Option", Left(KindArrow(KindStar, KindStar))),
+          (
+            "None",
+            Right(TypeAll("T", KindStar, TypeApp(TypeVar(1, 2), TypeVar(0, 2))))
+          ),
+          (
+            "Some",
+            Right(
+              TypeAll(
+                "T",
+                KindStar,
+                TypeArrow(TypeVar(0, 3), TypeApp(TypeVar(2, 3), TypeVar(0, 3)))
+              )
+            )
+          )
+        )
+      )
     }
     test("type check algebraic data type") {
       typeCheck(
@@ -469,7 +487,31 @@ object TypeCheckerSpec extends TestSuite {
             )
           )
         )
-      ) ==> Right(List())
+      ) ==> Right(
+        List(
+          ("List", Left(KindArrow(KindStar, KindStar))),
+          (
+            "Nil",
+            Right(TypeAll("A", KindStar, TypeApp(TypeVar(1, 2), TypeVar(0, 2))))
+          ),
+          (
+            "Cons",
+            Right(
+              TypeAll(
+                "A",
+                KindStar,
+                TypeArrow(
+                  TypeVar(0, 3),
+                  TypeArrow(
+                    TypeApp(TypeVar(2, 3), TypeVar(0, 3)),
+                    TypeApp(TypeVar(2, 3), TypeVar(0, 3))
+                  )
+                )
+              )
+            )
+          )
+        )
+      )
     }
   }
 
