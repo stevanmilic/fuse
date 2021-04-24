@@ -13,7 +13,7 @@ object TypeCheckerSpec extends TestSuite {
           Bind(
             "&multiply",
             TermAbbBind(
-              TermBuiltin(TypeArrow(TypeInt, TypeArrow(TypeInt, TypeInt))),
+              TermBuiltin(TypeArrow(TypeInt, TypeArrow(TypeInt, TypeInt)))
             )
           ),
           Bind(
@@ -22,7 +22,7 @@ object TypeCheckerSpec extends TestSuite {
               TermAbs(
                 "_",
                 TypeUnit,
-                TermApp(TermApp(TermVar(0, 1), TermInt(1)), TermInt(2)),
+                TermApp(TermApp(TermVar(1, 2), TermInt(1)), TermInt(2)),
                 Some(TypeInt)
               )
             )
@@ -41,7 +41,7 @@ object TypeCheckerSpec extends TestSuite {
           Bind(
             "&add",
             TermAbbBind(
-              TermBuiltin(TypeArrow(TypeInt, TypeArrow(TypeInt, TypeInt))),
+              TermBuiltin(TypeArrow(TypeInt, TypeArrow(TypeInt, TypeInt)))
             )
           ),
           Bind(
@@ -99,8 +99,8 @@ object TypeCheckerSpec extends TestSuite {
                   "y",
                   TypeInt,
                   TermApp(
-                    TermFold(TypeVar(2, 4)),
-                    TermRecord(List(("x", TermVar(1, 4)), ("y", TermVar(0, 4))))
+                    TermFold(TypeVar(2, 3)),
+                    TermRecord(List(("x", TermVar(1, 3)), ("y", TermVar(0, 3))))
                   )
                 )
               )
@@ -112,8 +112,8 @@ object TypeCheckerSpec extends TestSuite {
               TermAbs(
                 "_",
                 TypeUnit,
-                TermApp(TermApp(TermVar(0, 1), TermInt(0)), TermInt(0)),
-                Some(TypeVar(0, 1))
+                TermApp(TermApp(TermVar(1, 3), TermInt(0)), TermInt(0)),
+                Some(TypeVar(2, 3))
               )
             )
           )
@@ -123,13 +123,281 @@ object TypeCheckerSpec extends TestSuite {
           ("Point", Left(KindStar)),
           (
             "%Point",
-            Right(TypeArrow(TypeInt, TypeArrow(TypeInt, TypeVar(0, 2))))
+            Right(TypeArrow(TypeInt, TypeArrow(TypeInt, TypeVar(0, 1))))
           ),
-          ("zero_point", Right(TypeArrow(TypeUnit, TypeVar(0, 2))))
+          ("zero_point", Right(TypeArrow(TypeUnit, TypeVar(1, 2))))
         )
       )
     }
-    test("type check algebraic datat type") {
+    test("type check function with variant data constructor") {
+      typeCheck(
+        List(
+          Bind(
+            "bool",
+            TypeAbbBind(
+              TypeRec(
+                "@bool",
+                KindStar,
+                TypeVariant(List(("true", TypeUnit), ("false", TypeUnit)))
+              )
+            )
+          ),
+          Bind(
+            "true",
+            TermAbbBind(
+              TermApp(
+                TermFold(TypeVar(0, 1)),
+                TermTag("true", TermUnit, TypeVar(0, 1))
+              )
+            )
+          ),
+          Bind(
+            "false",
+            TermAbbBind(
+              TermApp(
+                TermFold(TypeVar(1, 2)),
+                TermTag("false", TermUnit, TypeVar(1, 2))
+              )
+            )
+          )
+        )
+      ) ==> Right(
+        List(
+          ("bool", Left(KindStar)),
+          ("true", Right(TypeVar(0, 1))),
+          ("false", Right(TypeVar(1, 2)))
+        )
+      )
+    }
+    test("type check function with variant data constructor on record type") {
+      typeCheck(
+        List(
+          Bind(
+            "DataPoint",
+            TypeAbbBind(
+              TypeRec(
+                "@DataPoint",
+                KindStar,
+                TypeVariant(
+                  List(
+                    (
+                      "2DPoint",
+                      TypeRecord(List(("x", TypeFloat), ("y", TypeFloat)))
+                    ),
+                    (
+                      "3DPoint",
+                      TypeRecord(
+                        List(
+                          ("x", TypeFloat),
+                          ("y", TypeFloat),
+                          ("z", TypeFloat)
+                        )
+                      )
+                    )
+                  )
+                )
+              )
+            )
+          ),
+          Bind(
+            "2DPoint",
+            TermAbbBind(
+              TermAbs(
+                "x",
+                TypeFloat,
+                TermAbs(
+                  "y",
+                  TypeFloat,
+                  TermApp(
+                    TermFold(TypeVar(2, 3)),
+                    TermTag(
+                      "2DPoint",
+                      TermRecord(
+                        List(("x", TermVar(1, 3)), ("y", TermVar(0, 3)))
+                      ),
+                      TypeVar(2, 3)
+                    )
+                  )
+                )
+              )
+            )
+          ),
+          Bind(
+            "3DPoint",
+            TermAbbBind(
+              TermAbs(
+                "x",
+                TypeFloat,
+                TermAbs(
+                  "y",
+                  TypeFloat,
+                  TermAbs(
+                    "z",
+                    TypeFloat,
+                    TermApp(
+                      TermFold(TypeVar(4, 5)),
+                      TermTag(
+                        "3DPoint",
+                        TermRecord(
+                          List(
+                            ("x", TermVar(2, 5)),
+                            ("y", TermVar(1, 5)),
+                            ("z", TermVar(0, 5))
+                          )
+                        ),
+                        TypeVar(4, 5)
+                      )
+                    )
+                  )
+                )
+              )
+            )
+          )
+        )
+      ) ==> Right(
+        List(
+          ("DataPoint", Left(KindStar)),
+          (
+            "2DPoint",
+            Right(TypeArrow(TypeFloat, TypeArrow(TypeFloat, TypeVar(0, 1))))
+          ),
+          (
+            "3DPoint",
+            Right(
+              TypeArrow(
+                TypeFloat,
+                TypeArrow(TypeFloat, TypeArrow(TypeFloat, TypeVar(1, 2)))
+              )
+            )
+          )
+        )
+      )
+    }
+    test("type check function with parametric record data constructor") {
+      typeCheck(
+        List(
+          Bind(
+            "Point",
+            TypeAbbBind(
+              TypeAbs(
+                "T",
+                TypeRec(
+                  "@Point",
+                  KindArrow(KindStar, KindStar),
+                  TypeRecord(List(("x", TypeVar(1, 2)), ("y", TypeVar(1, 2))))
+                )
+              )
+            )
+          ),
+          Bind(
+            "%Point",
+            TermAbbBind(
+              TermTAbs(
+                "T",
+                TermAbs(
+                  "x",
+                  TypeVar(0, 2),
+                  TermAbs(
+                    "y",
+                    TypeVar(1, 3),
+                    TermApp(
+                      TermFold(TypeApp(TypeVar(3, 4), TypeVar(2, 4))),
+                      TermRecord(
+                        List(
+                          ("x", TermVar(1, 4)),
+                          ("y", TermVar(0, 4))
+                        )
+                      )
+                    )
+                  )
+                )
+              )
+            )
+          )
+        )
+      ) ==> Right(
+        List(
+          ("Point", Left(KindArrow(KindStar, KindStar))),
+          (
+            "%Point",
+            Right(
+              TypeAll(
+                "T",
+                KindStar,
+                TypeArrow(
+                  TypeVar(0, 2),
+                  TypeArrow(
+                    TypeVar(0, 2),
+                    TypeApp(TypeVar(1, 2), TypeVar(0, 2))
+                  )
+                )
+              )
+            )
+          )
+        )
+      )
+    }
+    test("type check function with parametric variant data constructor") {
+      typeCheck(
+        List(
+          Bind(
+            "Option",
+            TypeAbbBind(
+              TypeAbs(
+                "T",
+                TypeRec(
+                  "@Option",
+                  KindArrow(KindStar, KindStar),
+                  TypeVariant(
+                    List(
+                      ("None", TypeUnit),
+                      ("Some", TypeRecord(List(("1", TypeVar(1, 2)))))
+                    )
+                  )
+                )
+              )
+            )
+          ),
+          Bind(
+            "None",
+            TermAbbBind(
+              TermTAbs(
+                "T",
+                TermApp(
+                  TermFold(TypeApp(TypeVar(1, 2), TypeVar(0, 2))),
+                  TermTag(
+                    "None",
+                    TermUnit,
+                    TypeApp(TypeVar(1, 2), TypeVar(0, 2))
+                  )
+                )
+              )
+            )
+          ),
+          Bind(
+            "Some",
+            TermAbbBind(
+              TermTAbs(
+                "T",
+                TermAbs(
+                  "#1",
+                  TypeVar(0, 3),
+                  TermApp(
+                    TermFold(TypeApp(TypeVar(3, 4), TypeVar(1, 4))),
+                    TermTag(
+                      "Some",
+                      TermRecord(List(("1", TermVar(0, 4)))),
+                      TypeApp(TypeVar(3, 4), TypeVar(1, 4))
+                    )
+                  )
+                )
+              )
+            )
+          )
+        )
+      ) ==> Right(List())
+    }
+    test("type check algebraic data type") {
       typeCheck(
         List(
           Bind(
@@ -164,11 +432,11 @@ object TypeCheckerSpec extends TestSuite {
               TermTAbs(
                 "A",
                 TermApp(
-                  TermFold(TypeApp(TypeVar(1, 4), TypeVar(0, 4))),
+                  TermFold(TypeApp(TypeVar(1, 2), TypeVar(0, 2))),
                   TermTag(
                     "Nil",
                     TermUnit,
-                    TypeVar(2, 4)
+                    TypeApp(TypeVar(1, 2), TypeVar(0, 2))
                   )
                 )
               )
@@ -181,18 +449,18 @@ object TypeCheckerSpec extends TestSuite {
                 "A",
                 TermAbs(
                   "#1",
-                  TypeVar(0, 6),
+                  TypeVar(0, 3),
                   TermAbs(
                     "#2",
-                    TypeApp(TypeVar(4, 7), TypeVar(1, 7)),
+                    TypeApp(TypeVar(3, 4), TypeVar(1, 4)),
                     TermApp(
-                      TermFold(TypeApp(TypeVar(5, 8), TypeVar(2, 8))),
+                      TermFold(TypeApp(TypeVar(4, 5), TypeVar(2, 5))),
                       TermTag(
                         "Cons",
                         TermRecord(
-                          List(("1", TermVar(1, 8)), ("2", TermVar(0, 8)))
+                          List(("1", TermVar(1, 5)), ("2", TermVar(0, 5)))
                         ),
-                        TypeVar(6, 8)
+                        TypeApp(TypeVar(4, 5), TypeVar(2, 5))
                       )
                     )
                   )
@@ -200,7 +468,8 @@ object TypeCheckerSpec extends TestSuite {
               )
             )
           )
-      )) ==> Right(List())
+        )
+      ) ==> Right(List())
     }
   }
 

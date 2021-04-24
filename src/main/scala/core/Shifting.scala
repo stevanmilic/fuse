@@ -29,7 +29,7 @@ object Shifting {
 
   def typeSubstitute(tyS: Type, i: Int, tyT: Type): Type =
     typeMap(
-      (j, x, n) => if (x == j) typeShift(1, tyS) else TypeVar(x, n),
+      (j, x, n) => if (x == j) typeShift(j, tyS) else TypeVar(x, n),
       i,
       tyT
     )
@@ -43,9 +43,9 @@ object Shifting {
       case TypeVariant(fieldTypes) =>
         TypeVariant(fieldTypes.map { case (l, tyTi) => (l, iter(c, tyTi)) })
       case TypeArrow(tyT1, tyT2) => TypeArrow(iter(c, tyT1), iter(c, tyT2))
-      case TypeRec(x, k, tyTi)   => TypeRec(x, k, iter(c, tyTi))
+      case TypeRec(x, k, tyTi)   => TypeRec(x, k, iter(c + 1, tyTi))
       case TypeAll(x, k, tyTi)   => TypeAll(x, k, iter(c + 1, tyTi))
-      case TypeAbs(x, tyTi)      => TypeAbs(x, iter(c, tyTi))
+      case TypeAbs(x, tyTi)      => TypeAbs(x, iter(c + 1, tyTi))
       case TypeApp(tyT1, tyT2)   => TypeApp(iter(c, tyT1), iter(c, tyT2))
       case TypeString            => TypeString
       case TypeUnit              => TypeUnit

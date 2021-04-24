@@ -26,20 +26,23 @@ object TypeChecker {
       )
 
   def checkBinding(b: Binding): StateEither[Binding] = b match {
-    case NameBind              => EitherT.rightT(NameBind)
-    case t @ TypeVarBind(_)    => EitherT.rightT(t)
-    case v @ VarBind(_)        => EitherT.rightT(v)
-    case TypeAbbBind(ty, None) => kindOf(ty).map(k => TypeAbbBind(ty, Some(k)))
+    case NameBind           => EitherT.rightT(NameBind)
+    case t @ TypeVarBind(_) => EitherT.rightT(t)
+    case v @ VarBind(_)     => EitherT.rightT(v)
+    case TypeAbbBind(ty, None) =>
+      pureKindOf(ty).map(k => TypeAbbBind(ty, Some(k)))
     case TermAbbBind(term, None) =>
-      typeOf(term).map(ty => TermAbbBind(term, Some(ty)))
+      pureTypeOf(term).map(ty => TermAbbBind(term, Some(ty)))
 
   }
+
+  def pureTypeOf(t: Term): StateEither[Type] = Context.runE(typeOf(t))
 
   def typeOf(term: Term): StateEither[Type] = term match {
     case TermAscribe(t1, typeToAscribe) =>
       for {
         _ <- checkKindStar(typeToAscribe)
-        tyT1 <- typeOf(t1)
+        tyT1 <- pureTypeOf(t1)
         t <- EitherT(
           isTypeEqual(tyT1, typeToAscribe).map(
             Either.cond(_, typeToAscribe, Error.AscribeWrongType)
@@ -57,11 +60,8 @@ object TypeChecker {
     case TermAbs(variable, variableType, expr, _) =>
       for {
         _ <- checkKindStar(variableType)
-        _ <-
-          if (variable != WildcardName)
-            EitherT.liftF(Context.addBinding(variable, VarBind(variableType)))
-          else EitherT.liftF(State.inspect[Context, Context](identity))
-        tyT2 <- typeOf(expr)
+        _ <- EitherT.liftF(Context.addBinding(variable, VarBind(variableType)))
+        tyT2 <- pureTypeOf(expr)
       } yield TypeArrow(variableType, typeShift(-1, tyT2))
     case TermApp(t1, t2) =>
       for {
@@ -72,15 +72,22 @@ object TypeChecker {
           case TypeArrow(tyT11, tyT12) =>
             EitherT(
               isTypeEqual(tyT2, tyT11).map(
-                Either.cond(_, tyT12, Error.AppParameterTypeMismatch + " " + tyT2 + " " + tyT11)
+                Either.cond(
+                  _,
+                  tyT12,
+                  Error.AppParameterTypeMismatch + " " + tyT2 + " " + tyT11
+                )
               )
             )
-          case _ => EitherT.leftT[ContextState, Type](Error.AppNotArrowType)
+          case _ =>
+            EitherT.leftT[ContextState, Type](
+              Error.AppNotArrowType + " " + tyT1
+            )
         }
       } yield ty
     case TermProj(ty, label) =>
       for {
-        tyT1 <- typeOf(ty)
+        tyT1 <- pureTypeOf(ty)
         tyT1S <- EitherT.liftF(simplifyType(tyT1))
         fieldType <- tyT1S match {
           case TypeRecord(fields) =>
@@ -95,7 +102,7 @@ object TypeChecker {
       } yield fieldType
     case TermFix(t1) =>
       for {
-        tyT1 <- typeOf(t1)
+        tyT1 <- pureTypeOf(t1)
         tyT1S <- EitherT.liftF(simplifyType(tyT1))
         bodyType <- tyT1S match {
           case TypeArrow(tyT11, tyT12) =>
@@ -110,7 +117,7 @@ object TypeChecker {
     case TermRecord(fields) =>
       fields
         .traverse { case (v, term) =>
-          typeOf(term).map((v, _))
+          pureTypeOf(term).map((v, _))
         }
         .map(TypeRecord(_))
     case TermFold(tyS) =>
@@ -121,19 +128,19 @@ object TypeChecker {
       }))
     case TermLet(variable, t1, t2) =>
       for {
-        tyT1 <- typeOf(t1)
+        tyT1 <- pureTypeOf(t1)
         ctx1 = EitherT.liftF(Context.addBinding(variable, VarBind(tyT1)))
-        tyT2 <- typeOf(t2)
+        tyT2 <- pureTypeOf(t2)
       } yield typeShift(-1, tyT2)
     case TermTAbs(v, t) =>
       for {
         _ <- EitherT.liftF(Context.addBinding(v, TypeVarBind(KindStar)))
-        ty <- typeOf(t).map(TypeAll(v, KindStar, _))
+        ty <- pureTypeOf(t).map(TypeAll(v, KindStar, _))
       } yield ty
     case TermTApp(t1, ty2) =>
       for {
         k2 <- kindOf(ty2)
-        ty1 <- typeOf(t1)
+        ty1 <- pureTypeOf(t1)
         tyT1 <- EitherT.liftF(simplifyType(ty1))
         ty <- tyT1 match {
           case TypeAll(_, k1, tyT2) =>
@@ -150,7 +157,7 @@ object TypeChecker {
     case TermMatch(exprTerm, cases) =>
       for {
         // Get the type of the expression to match.
-        ty1 <- typeOf(exprTerm)
+        ty1 <- pureTypeOf(exprTerm)
         exprType <- EitherT.liftF(unfoldType(ty1))
         // Get the types of expresion for each case, with a check for pattern
         // type equivalence to the expression type.
@@ -184,30 +191,31 @@ object TypeChecker {
       } yield caseExprType
     case TermTag(tag, t1, ty1) =>
       for {
-        tyT1 <- EitherT.liftF(simplifyType(ty1))
+        tyT1 <- EitherT.liftF(simplifyType(ty1, true))
         tyTiExpected <- EitherT.fromEither[ContextState](tyT1 match {
           case TypeVariant(fields) =>
             fields
               .find(_._1 == tag)
               .map(_._2)
               .toRight(Error.TagVariantFieldNotFound(tag))
-          case _ => 
-            println(tyT1)
+          case _ =>
+            print(tyT1)
             Left(Error.TagNotVariantType)
+
         })
-        tyTi <- typeOf(t1)
+        tyTi <- pureTypeOf(t1)
         ty <- EitherT(
           isTypeEqual(tyTi, tyTiExpected).map(
             Either.cond(_, ty1, Error.TagFieldTypeMismatch)
           )
         )
-      } yield ty
-    case TermTrue      => (TypeBool: Type).pure[StateEither]
-    case TermFalse     => (TypeBool: Type).pure[StateEither]
-    case TermInt(_)    => (TypeInt: Type).pure[StateEither]
-    case TermFloat(_)  => (TypeFloat: Type).pure[StateEither]
-    case TermString(_) => (TypeString: Type).pure[StateEither]
-    case TermUnit      => (TypeUnit: Type).pure[StateEither]
+      } yield tyT1
+    case TermTrue        => (TypeBool: Type).pure[StateEither]
+    case TermFalse       => (TypeBool: Type).pure[StateEither]
+    case TermInt(_)      => (TypeInt: Type).pure[StateEither]
+    case TermFloat(_)    => (TypeFloat: Type).pure[StateEither]
+    case TermString(_)   => (TypeString: Type).pure[StateEither]
+    case TermUnit        => (TypeUnit: Type).pure[StateEither]
     case TermBuiltin(ty) => ty.pure[StateEither]
 
   }
@@ -258,20 +266,16 @@ object TypeChecker {
 
   def unfoldType(tyS: Type): ContextState[Type] =
     simplifyType(tyS).map(_ match {
-      case TypeRec(_, _, tyT) => typeSubstituteTop(tyS, tyT)
+      case TypeRec(_, _, tyT) => TypeArrow(tyS, typeSubstituteTop(tyS, tyT))
       case ty                 => ty
     })
 
   def isTypeEqual(ty1: Type, ty2: Type): ContextState[Boolean] = {
-    println("C1: " + ty1)
-    println("C2: " + ty2)
     val tys = for {
       ty1S <- simplifyType(ty1)
       ty2S <- simplifyType(ty2)
     } yield (ty1S, ty2S)
     tys.flatMap { case (tyS, tyT) =>
-      println("I1: " + tyS)
-      println("I2: " + tyT)
       (tyS, tyT) match {
         case (TypeString, TypeString)   => true.pure[ContextState]
         case (TypeId(id1), TypeId(id2)) => (id1 == id2).pure[ContextState]
@@ -284,8 +288,8 @@ object TypeChecker {
             b1 <- isTypeEqual(tyS1, tyT1)
             b2 <- isTypeEqual(tyS2, tyT2)
           } yield b1 && b2
-        case (TypeRec(_, k1, tyS1), TypeRec(_, k2, tyT1)) if k1 == k2 =>
-          isTypeEqual(tyS1, tyT1)
+        case (TypeRec(x1, k1, tyS1), TypeRec(_, k2, tyT1)) if k1 == k2 =>
+          Context.addName(x1).flatMap(_ => isTypeEqual(tyS1, tyT1))
         case (TypeVar(idx1, _), TypeVar(idx2, _)) =>
           (idx1 == idx2).pure[ContextState]
         case (TypeVar(idx, _), _) =>
@@ -304,10 +308,10 @@ object TypeChecker {
               .map(f => isTypeEqual(tyT1, f._2).map(_ && l1 == f._1))
               .getOrElse(false.pure[ContextState])
           }.map(_.forall(identity))
-        case (TypeAll(_, k1, tyS1), TypeAll(_, k2, tyT1)) if k1 == k2 =>
-          isTypeEqual(tyS1, tyT1)
-        case (TypeAbs(_, tyS1), TypeAbs(_, tyT1)) =>
-          isTypeEqual(tyS1, tyT1)
+        case (TypeAll(tyX1, k1, tyS1), TypeAll(_, k2, tyT1)) if k1 == k2 =>
+          Context.addName(tyX1).flatMap(_ => isTypeEqual(tyS1, tyT1))
+        case (TypeAbs(tyX1, tyS1), TypeAbs(_, tyT1)) =>
+          Context.addName(tyX1).flatMap(_ => isTypeEqual(tyS1, tyT1))
         case (TypeApp(tyS1, tyS2), TypeApp(tyT1, tyT2)) =>
           for {
             b1 <- isTypeEqual(tyS1, tyT1)
@@ -318,13 +322,17 @@ object TypeChecker {
     }
   }
 
-  def simplifyType(ty: Type): ContextState[Type] =
+  def simplifyType(ty: Type, simplifyRec: Boolean = false): ContextState[Type] =
     for {
       tyT <- ty match {
-        case TypeApp(tyT1, tyT2) => simplifyType(tyT1).map(TypeApp(_, tyT2))
-        case _                   => State.pure[Context, Type](ty)
+        case TypeApp(tyT1, tyT2) =>
+          simplifyType(tyT1, simplifyRec).map(TypeApp(_, tyT2))
+        case TypeRec(_, _, tyT1) if simplifyRec => tyT1.pure[ContextState]
+        case _                                  => ty.pure[ContextState]
       }
-      tyT1 <- computeType(tyT).semiflatMap(simplifyType(_)).getOrElse(tyT)
+      tyT1 <- computeType(tyT)
+        .semiflatMap(simplifyType(_, simplifyRec))
+        .getOrElse(tyT)
     } yield tyT1
 
   def computeType(ty: Type): StateOption[Type] = ty match {
@@ -352,6 +360,8 @@ object TypeChecker {
     })
     .getOrElse(false)
 
+  def pureKindOf(t: Type): StateEither[Kind] = Context.runE(kindOf(t))
+
   def kindOf(t: Type): StateEither[Kind] = t match {
     case TypeArrow(ty1, ty2) =>
       for {
@@ -368,28 +378,31 @@ object TypeChecker {
         _ <- EitherT.liftF(Context.addBinding(tyX, TypeVarBind(k1)))
         _ <- checkKindStar(tyT2)
       } yield KindStar
-    case TypeAbs(tyX, tyT2) => for {
-      _ <- EitherT.liftF(addBinding(tyX, TypeVarBind(KindStar)))
-      k <- kindOf(tyT2)
-    } yield KindArrow(KindStar, k) 
+    case TypeAbs(tyX, tyT2) =>
+      for {
+        _ <- EitherT.liftF(addBinding(tyX, TypeVarBind(KindStar)))
+        k <- pureKindOf(tyT2)
+      } yield KindArrow(KindStar, k)
     case TypeApp(tyT1, tyT2) =>
       for {
-        k1 <- kindOf(tyT1)
-        k2 <- kindOf(tyT2)
+        k1 <- pureKindOf(tyT1)
+        k2 <- pureKindOf(tyT2)
         k <- EitherT.fromEither[ContextState](k1 match {
           case KindArrow(k11, k12) =>
             Either.cond(k11 == k2, k12, Error.KindAppParameterMismatch)
           case _ => Left(Error.NotArrowKind)
         })
       } yield k
-    case TypeRec(tyX, k1, tyT2) => for {
-      _ <- EitherT.liftF(addBinding(tyX, TypeAbbBind(tyT2, Some(k1))))
-    } yield k1
+    case TypeRec(tyX, k1, tyT2) =>
+      for {
+        _ <- EitherT.liftF(addBinding(tyX, TypeVarBind(k1)))
+        k <- pureKindOf(tyT2)
+      } yield k
     case _ => EitherT.rightT(KindStar)
   }
 
   def checkKindStar(ty: Type): StateEither[Kind] =
-    kindOf(ty).flatMap(k =>
+    pureKindOf(ty).flatMap(k =>
       EitherT.cond(k == KindStar, KindStar, Error.KindStarExpected)
     )
 

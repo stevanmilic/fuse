@@ -19,38 +19,46 @@ object Desugar {
       val variant = toTypeVariant(values)
       val rec = withRecType(i, typ, variant)
       for {
-        abs <- withTypeAbs(typ, rec)
-        hb <- bindTypeAbb(i, abs)
-        tb <- buildVariantConstructors(i, typ, values.toList)
-      } yield hb :: tb
+        variantType <- Context.run(withTypeAbs(typ, rec))
+        typeBind <- bindTypeAbb(i, variantType)
+        constructorBinds <- values.toList.traverse(v =>
+          for {
+            constructor <- Context.run(buildVariantConstructor(i, typ, v))
+            constructorBind <- bindTermAbb(v.v.value, constructor)
+          } yield constructorBind
+        )
+      } yield typeBind :: constructorBinds
     case FRecordTypeDecl(FIdentifier(i), typ, fields) =>
       val record = toTypeRecord(fields.map(_.p))
       val rec = withRecType(i, typ, record)
       for {
-        abs <- withTypeAbs(typ, rec)
-        hb <- bindTypeAbb(i, abs)
-        tb <- buildRecordConstructor(i, typ, Left(fields.map(_.p)))
-      } yield hb :: List(tb)
+        recordType <- Context.run(withTypeAbs(typ, rec))
+        typeBind <- bindTypeAbb(i, recordType)
+        constructor <- Context.run(
+          buildRecordConstructor(i, typ, Left(fields.map(_.p)))
+        )
+        constructorBind <- bindTermAbb(toRecordConstructorId(i), constructor)
+      } yield typeBind :: List(constructorBind)
     case FTupleTypeDecl(FIdentifier(i), typ, types) =>
       val tuple = toTupleTypeRecord(types)
       val rec = withRecType(i, typ, tuple)
       for {
-        abs <- withTypeAbs(typ, rec)
-        hb <- bindTypeAbb(i, abs)
-        tb <- buildRecordConstructor(i, typ, Right(types))
-      } yield hb :: List(tb)
+        recordType <- Context.run(withTypeAbs(typ, rec))
+        typeBind <- bindTypeAbb(i, recordType)
+        constructor <- Context.run(buildRecordConstructor(i, typ, Right(types)))
+        constructorBind <- bindTermAbb(toRecordConstructorId(i), constructor)
+      } yield typeBind :: List(constructorBind)
     case FTypeAlias(FIdentifier(i), typ, t) =>
       val alias = toType(t)
       for {
-        abs <- withTypeAbs(typ, alias)
-        b <- bindTypeAbb(i, abs)
-      } yield List(b)
+        alias <- Context.run(withTypeAbs(typ, alias))
+        typeBind <- bindTypeAbb(i, alias)
+      } yield List(typeBind)
     case FFuncDecl(sig @ FFuncSig(FIdentifier(i), tp, _, _), exprs) => {
       for {
-        t <- withTermTypeAbs(tp)
-        abs <- withFuncAbs(sig, toTermExpr(exprs.toList))
-        b <- bindTermAbb(i, t(abs))
-      } yield List(b)
+        func <- Context.run(buildFunc(tp, sig, exprs))
+        funcBind <- bindTermAbb(i, func)
+      } yield List(funcBind)
     }
     case _ => throw new Exception("not supported decl")
   }
@@ -64,6 +72,15 @@ object Desugar {
   // # Bind # region_end
 
   // # Term # region_start
+
+  def buildFunc(
+      tp: FTypeParamClause,
+      sig: FFuncSig,
+      exprs: Seq[FExpr]
+  ): ContextState[Term] = for {
+    t <- withTermTypeAbs(tp)
+    abs <- withFuncAbs(sig, toTermExpr(exprs.toList))
+  } yield t(abs)
 
   def withFuncAbs(
       s: FFuncSig,
@@ -251,12 +268,11 @@ object Desugar {
       typ: ContextState[Type]
   ): ContextState[Type] = tp match {
     case Some(params) =>
-      params.foldRight(typ)((p, acc) =>
-        for {
-          v <- Context.addName(p.i.value)
-          t <- acc
-        } yield TypeAbs(v, t)
-      )
+      val ids = params.map(_.i.value).toList
+      for {
+        _ <- ids.traverse(Context.addName(_))
+        ty <- typ
+      } yield ids.foldRight(ty)((p, acc) => TypeAbs(p, acc))
     case None => typ
   }
 
@@ -276,49 +292,39 @@ object Desugar {
 
   // # Constructors # region_start
 
-  def buildVariantConstructors(
-      name: String,
-      tp: FTypeParamClause,
-      t: List[FVariantTypeValue]
-  ): ContextState[List[Bind]] =
-    t.traverse(buildVariantConstructor(name, tp, _))
-
   def buildVariantConstructor(
       variantName: String,
       tp: FTypeParamClause,
       v: FVariantTypeValue
-  ): ContextState[Bind] = v match {
+  ): ContextState[Term] = v match {
     case FVariantTypeValue(FIdentifier(i), None) =>
       for {
         g <- withTermTypeAbs(tp)
-        tag = toTermTag(variantName, i, State.pure(TermUnit))
+        tag = toTermTag(variantName, tp, i, State.pure(TermUnit))
         fold <- withFold(variantName, tp, tag)
-        b <- bindTermAbb(i, g(fold))
-      } yield b
+      } yield g(fold)
     case FVariantTypeValue(FIdentifier(i), Some(fields)) =>
       for {
         g <- withTermTypeAbs(tp)
         values = toRecordValues(fields)
         r = toTermRecord(values)
-        tag = toTermTag(variantName, i, r)
+        tag = toTermTag(variantName, tp, i, r)
         fold = withFold(variantName, tp, tag)
         abs <- withRecordAbs(values, fold)
-        b <- bindTermAbb(i, g(abs))
-      } yield b
+      } yield g(abs)
   }
 
   def buildRecordConstructor(
       recordName: String,
       tp: FTypeParamClause,
       fields: Either[FParams, FTypes]
-  ): ContextState[Bind] = for {
+  ): ContextState[Term] = for {
     g <- withTermTypeAbs(tp)
     values = toRecordValues(fields)
     r = toTermRecord(values)
     fold = withFold(recordName, tp, r)
     abs <- withRecordAbs(values, fold)
-    b <- bindTermAbb(toRecordConstructorId(recordName), g(abs))
-  } yield b
+  } yield g(abs)
 
   def toTermRecord(values: List[(String, FType)]): ContextState[Term] =
     values
@@ -329,11 +335,12 @@ object Desugar {
 
   def toTermTag(
       name: String,
+      tp: FTypeParamClause,
       tag: String,
       body: ContextState[Term]
   ): ContextState[Term] = for {
     term <- body
-    typ <- toTypeVarOrId(toRecId(name))
+    typ <- withTypeApp(name, tp)
   } yield TermTag(tag, term, typ)
 
   def toRecordValues(fields: Either[FParams, FTypes]) =
@@ -371,22 +378,24 @@ object Desugar {
       name: String,
       tp: FTypeParamClause,
       body: ContextState[Term]
-  ): ContextState[Term] = tp match {
-    case None =>
-      for {
-        typ <- toTypeVarOrId(name)
-        term <- body
-      } yield TermApp(TermFold(typ), term)
-    case Some(tys) =>
-      tys
-        .foldLeft(toTypeVarOrId(name))((acc, tp) =>
-          for {
-            typ <- toTypeVarOrId(tp.i.value)
-            app <- acc
-          } yield TypeApp(app, typ)
-        )
-        .map2(body)((typ, term) => TermApp(TermFold(typ), term))
-  }
+  ): ContextState[Term] =
+    for {
+      typ <- withTypeApp(name, tp)
+      term <- body
+    } yield TermApp(TermFold(typ), term)
+
+  def withTypeApp(name: String, tp: FTypeParamClause): ContextState[Type] =
+    tp match {
+      case None => toTypeVarOrId(name)
+      case Some(tys) =>
+        tys
+          .foldLeft(toTypeVarOrId(name))((acc, tp) =>
+            for {
+              typ <- toTypeVarOrId(tp.i.value)
+              app <- acc
+            } yield TypeApp(app, typ)
+          )
+    }
 
   // Prepends the identifier with "#" if it's an integer – depicting it's used
   // for the tuple records. If not, the identifier is returned unchanged.

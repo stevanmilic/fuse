@@ -46,6 +46,12 @@ object Context {
       case _           => None
     }
 
+  def run[T](state: ContextState[T]): ContextState[T] =
+    State { ctx => (ctx, state.runA(ctx).value) }
+
+  def runE[A](state: StateEither[A]): StateEither[A] =
+    EitherT { State(ctx => (ctx, state.value.runA(ctx).value)) }
+
   def getType(idx: Int): StateEither[Type] =
     getBinding(idx).flatMap[Error, Type](_ match {
       case VarBind(ty)              => EitherT.rightT(ty)

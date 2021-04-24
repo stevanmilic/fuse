@@ -23,8 +23,7 @@ object DesugarSpec extends TestSuite {
       ) ==> (List(
         ("false", NameBind),
         ("true", NameBind),
-        ("bool", NameBind),
-        ("@bool", NameBind)
+        ("bool", NameBind)
       ),
       List(
         Bind(
@@ -41,8 +40,8 @@ object DesugarSpec extends TestSuite {
           "true",
           TermAbbBind(
             TermApp(
-              TermFold(TypeVar(0, 2)),
-              TermTag("true", TermUnit, TypeVar(1, 2))
+              TermFold(TypeVar(0, 1)),
+              TermTag("true", TermUnit, TypeVar(0, 1))
             )
           )
         ),
@@ -50,8 +49,8 @@ object DesugarSpec extends TestSuite {
           "false",
           TermAbbBind(
             TermApp(
-              TermFold(TypeVar(1, 3)),
-              TermTag("false", TermUnit, TypeVar(2, 3))
+              TermFold(TypeVar(1, 2)),
+              TermTag("false", TermUnit, TypeVar(1, 2))
             )
           )
         )
@@ -72,10 +71,8 @@ object DesugarSpec extends TestSuite {
         )
       ) ==> (List(
         ("Some", NameBind),
-        ("#1", NameBind),
         ("None", NameBind),
-        ("OptionInt", NameBind),
-        ("@OptionInt", NameBind)
+        ("OptionInt", NameBind)
       ),
       List(
         Bind(
@@ -97,8 +94,8 @@ object DesugarSpec extends TestSuite {
           "None",
           TermAbbBind(
             TermApp(
-              TermFold(TypeVar(0, 2)),
-              TermTag("None", TermUnit, TypeVar(1, 2))
+              TermFold(TypeVar(0, 1)),
+              TermTag("None", TermUnit, TypeVar(0, 1))
             )
           )
         ),
@@ -109,11 +106,11 @@ object DesugarSpec extends TestSuite {
               "#1",
               TypeInt,
               TermApp(
-                TermFold(TypeVar(2, 4)),
+                TermFold(TypeVar(2, 3)),
                 TermTag(
                   "Some",
-                  TermRecord(List(("1", TermVar(0, 4)))),
-                  TypeVar(3, 4)
+                  TermRecord(List(("1", TermVar(0, 3)))),
+                  TypeVar(2, 3)
                 )
               )
             )
@@ -154,14 +151,8 @@ object DesugarSpec extends TestSuite {
         )
       ) ==> (List(
         ("3DPoint", NameBind),
-        ("z", NameBind),
-        ("y", NameBind),
-        ("x", NameBind),
         ("2DPoint", NameBind),
-        ("y", NameBind),
-        ("x", NameBind),
-        ("DataPoint", NameBind),
-        ("@DataPoint", NameBind)
+        ("DataPoint", NameBind)
       ),
       List(
         Bind(
@@ -197,13 +188,13 @@ object DesugarSpec extends TestSuite {
                 "y",
                 TypeFloat,
                 TermApp(
-                  TermFold(TypeVar(2, 4)),
+                  TermFold(TypeVar(2, 3)),
                   TermTag(
                     "2DPoint",
                     TermRecord(
-                      List(("x", TermVar(1, 4)), ("y", TermVar(0, 4)))
+                      List(("x", TermVar(1, 3)), ("y", TermVar(0, 3)))
                     ),
-                    TypeVar(3, 4)
+                    TypeVar(2, 3)
                   )
                 )
               )
@@ -223,17 +214,17 @@ object DesugarSpec extends TestSuite {
                   "z",
                   TypeFloat,
                   TermApp(
-                    TermFold(TypeVar(6, 8)),
+                    TermFold(TypeVar(4, 5)),
                     TermTag(
                       "3DPoint",
                       TermRecord(
                         List(
-                          ("x", TermVar(2, 8)),
-                          ("y", TermVar(1, 8)),
-                          ("z", TermVar(0, 8))
+                          ("x", TermVar(2, 5)),
+                          ("y", TermVar(1, 5)),
+                          ("z", TermVar(0, 5))
                         )
                       ),
-                      TypeVar(7, 8)
+                      TypeVar(4, 5)
                     )
                   )
                 )
@@ -259,10 +250,7 @@ object DesugarSpec extends TestSuite {
         )
       ) ==> (List(
         ("%Point", NameBind),
-        ("y", NameBind),
-        ("x", NameBind),
-        ("Point", NameBind),
-        ("@Point", NameBind)
+        ("Point", NameBind)
       ),
       List(
         Bind(
@@ -285,8 +273,8 @@ object DesugarSpec extends TestSuite {
                 "y",
                 TypeInt,
                 TermApp(
-                  TermFold(TypeVar(2, 4)),
-                  TermRecord(List(("x", TermVar(1, 4)), ("y", TermVar(0, 4))))
+                  TermFold(TypeVar(2, 3)),
+                  TermRecord(List(("x", TermVar(1, 3)), ("y", TermVar(0, 3))))
                 )
               )
             )
@@ -303,10 +291,7 @@ object DesugarSpec extends TestSuite {
         )
       ) ==> (List(
         ("%Pair", NameBind),
-        ("#2", NameBind),
-        ("#1", NameBind),
-        ("Pair", NameBind),
-        ("@Pair", NameBind)
+        ("Pair", NameBind)
       ),
       List(
         Bind(
@@ -329,8 +314,8 @@ object DesugarSpec extends TestSuite {
                 "#2",
                 TypeString,
                 TermApp(
-                  TermFold(TypeVar(2, 4)),
-                  TermRecord(List(("1", TermVar(1, 4)), ("2", TermVar(0, 4))))
+                  TermFold(TypeVar(2, 3)),
+                  TermRecord(List(("1", TermVar(1, 3)), ("2", TermVar(0, 3))))
                 )
               )
             )
@@ -368,11 +353,8 @@ object DesugarSpec extends TestSuite {
         (
           List(
             ("Cons", NameBind),
-            ("t", NameBind),
-            ("head", NameBind),
             ("Nil", NameBind),
-            ("ListInt", NameBind),
-            ("@ListInt", NameBind)
+            ("ListInt", NameBind)
           ),
           List(
             Bind(
@@ -399,8 +381,8 @@ object DesugarSpec extends TestSuite {
               "Nil",
               TermAbbBind(
                 TermApp(
-                  TermFold(TypeVar(0, 2)),
-                  TermTag("Nil", TermUnit, TypeVar(1, 2))
+                  TermFold(TypeVar(0, 1)),
+                  TermTag("Nil", TermUnit, TypeVar(0, 1))
                 )
               )
             ),
@@ -412,15 +394,15 @@ object DesugarSpec extends TestSuite {
                   TypeInt,
                   TermAbs(
                     "t",
-                    TypeVar(2, 4),
+                    TypeVar(2, 3),
                     TermApp(
-                      TermFold(TypeVar(3, 5)),
+                      TermFold(TypeVar(3, 4)),
                       TermTag(
                         "Cons",
                         TermRecord(
-                          List(("head", TermVar(1, 5)), ("t", TermVar(0, 5)))
+                          List(("head", TermVar(1, 4)), ("t", TermVar(0, 4)))
                         ),
-                        TypeVar(4, 5)
+                        TypeVar(3, 4)
                       )
                     )
                   )
@@ -442,10 +424,7 @@ object DesugarSpec extends TestSuite {
         )
       ) ==> (List(
         ("%Pair2", NameBind),
-        ("#2", NameBind),
-        ("#1", NameBind),
-        ("Pair2", NameBind),
-        ("@Pair2", NameBind)
+        ("Pair2", NameBind)
       ),
       List(
         Bind(
@@ -466,10 +445,10 @@ object DesugarSpec extends TestSuite {
               TypeInt,
               TermAbs(
                 "#2",
-                TypeVar(1, 3),
+                TypeVar(1, 2),
                 TermApp(
-                  TermFold(TypeVar(2, 4)),
-                  TermRecord(List(("1", TermVar(1, 4)), ("2", TermVar(0, 4))))
+                  TermFold(TypeVar(2, 3)),
+                  TermRecord(List(("1", TermVar(1, 3)), ("2", TermVar(0, 3))))
                 )
               )
             )
@@ -512,12 +491,7 @@ object DesugarSpec extends TestSuite {
       ) ==> (
         List(
           ("%Point", NameBind),
-          ("y", NameBind),
-          ("x", NameBind),
-          ("T", NameBind),
-          ("Point", NameBind),
-          ("@Point", NameBind),
-          ("T", NameBind)
+          ("Point", NameBind)
         ),
         List(
           Bind(
@@ -540,16 +514,16 @@ object DesugarSpec extends TestSuite {
                 "T",
                 TermAbs(
                   "x",
-                  TypeVar(0, 4),
+                  TypeVar(0, 2),
                   TermAbs(
                     "y",
-                    TypeVar(1, 5),
+                    TypeVar(1, 3),
                     TermApp(
-                      TermFold(TypeApp(TypeVar(3, 6), TypeVar(2, 6))),
+                      TermFold(TypeApp(TypeVar(3, 4), TypeVar(2, 4))),
                       TermRecord(
                         List(
-                          ("x", TermVar(1, 6)),
-                          ("y", TermVar(0, 6))
+                          ("x", TermVar(1, 4)),
+                          ("y", TermVar(0, 4))
                         )
                       )
                     )
@@ -576,13 +550,8 @@ object DesugarSpec extends TestSuite {
         )
       ) ==> (List(
         ("Some", NameBind),
-        ("#1", NameBind),
-        ("T", NameBind),
         ("None", NameBind),
-        ("T", NameBind),
-        ("Option", NameBind),
-        ("@Option", NameBind),
-        ("T", NameBind)
+        ("Option", NameBind)
       ),
       List(
         Bind(
@@ -609,8 +578,8 @@ object DesugarSpec extends TestSuite {
             TermTAbs(
               "T",
               TermApp(
-                TermFold(TypeApp(TypeVar(1, 4), TypeVar(0, 4))),
-                TermTag("None", TermUnit, TypeVar(2, 4))
+                TermFold(TypeApp(TypeVar(1, 2), TypeVar(0, 2))),
+                TermTag("None", TermUnit, TypeApp(TypeVar(1, 2), TypeVar(0, 2)))
               )
             )
           )
@@ -622,13 +591,13 @@ object DesugarSpec extends TestSuite {
               "T",
               TermAbs(
                 "#1",
-                TypeVar(0, 6),
+                TypeVar(0, 3),
                 TermApp(
-                  TermFold(TypeApp(TypeVar(4, 7), TypeVar(1, 7))),
+                  TermFold(TypeApp(TypeVar(3, 4), TypeVar(1, 4))),
                   TermTag(
                     "Some",
-                    TermRecord(List(("1", TermVar(0, 7)))),
-                    TypeVar(5, 7)
+                    TermRecord(List(("1", TermVar(0, 4)))),
+                    TypeApp(TypeVar(3, 4), TypeVar(1, 4))
                   )
                 )
               )
@@ -663,14 +632,8 @@ object DesugarSpec extends TestSuite {
           )
         ) ==> (List(
           ("Cons", NameBind),
-          ("#2", NameBind),
-          ("#1", NameBind),
-          ("A", NameBind),
           ("Nil", NameBind),
-          ("A", NameBind),
-          ("List", NameBind),
-          ("@List", NameBind),
-          ("A", NameBind)
+          ("List", NameBind)
         ),
         List(
           Bind(
@@ -705,11 +668,11 @@ object DesugarSpec extends TestSuite {
               TermTAbs(
                 "A",
                 TermApp(
-                  TermFold(TypeApp(TypeVar(1, 4), TypeVar(0, 4))),
+                  TermFold(TypeApp(TypeVar(1, 2), TypeVar(0, 2))),
                   TermTag(
                     "Nil",
                     TermUnit,
-                    TypeVar(2, 4)
+                    TypeApp(TypeVar(1, 2), TypeVar(0, 2))
                   )
                 )
               )
@@ -722,18 +685,18 @@ object DesugarSpec extends TestSuite {
                 "A",
                 TermAbs(
                   "#1",
-                  TypeVar(0, 6),
+                  TypeVar(0, 3),
                   TermAbs(
                     "#2",
-                    TypeApp(TypeVar(4, 7), TypeVar(1, 7)),
+                    TypeApp(TypeVar(3, 4), TypeVar(1, 4)),
                     TermApp(
-                      TermFold(TypeApp(TypeVar(5, 8), TypeVar(2, 8))),
+                      TermFold(TypeApp(TypeVar(4, 5), TypeVar(2, 5))),
                       TermTag(
                         "Cons",
                         TermRecord(
-                          List(("1", TermVar(1, 8)), ("2", TermVar(0, 8)))
+                          List(("1", TermVar(1, 5)), ("2", TermVar(0, 5)))
                         ),
-                        TypeVar(6, 8)
+                        TypeApp(TypeVar(4, 5), TypeVar(2, 5))
                       )
                     )
                   )
@@ -750,7 +713,7 @@ object DesugarSpec extends TestSuite {
           Some(Seq(FTypeParam(FIdentifier("T")))),
           FFuncType(Seq(), FSimpleType(FIdentifier("T")))
         )
-      ) ==> (List(("Function0", NameBind), ("T", NameBind)),
+      ) ==> (List(("Function0", NameBind)),
       List(
         Bind(
           "Function0",
@@ -770,7 +733,7 @@ object DesugarSpec extends TestSuite {
             FSimpleType(FIdentifier("B"))
           )
         )
-      ) ==> (List(("Function1", NameBind), ("B", NameBind), ("A", NameBind)),
+      ) ==> (List(("Function1", NameBind)),
       List(
         Bind(
           "Function1",
@@ -797,12 +760,7 @@ object DesugarSpec extends TestSuite {
           )
         )
       ) ==> (
-        List(
-          ("Function2", NameBind),
-          ("C", NameBind),
-          ("B", NameBind),
-          ("A", NameBind)
-        ),
+        List(("Function2", NameBind)),
         List(
           Bind(
             "Function2",
@@ -872,15 +830,7 @@ object DesugarSpec extends TestSuite {
       ) ==> (
         List(
           ("%DataPoint", NameBind),
-          ("#1", NameBind),
-          ("C", NameBind),
-          ("B", NameBind),
-          ("A", NameBind),
-          ("DataPoint", NameBind),
-          ("@DataPoint", NameBind),
-          ("C", NameBind),
-          ("B", NameBind),
-          ("A", NameBind)
+          ("DataPoint", NameBind)
         ),
         List(
           Bind(
@@ -931,22 +881,22 @@ object DesugarSpec extends TestSuite {
                       "#1",
                       TypeApp(
                         TypeApp(
-                          TypeApp(TypeVar(3, 8), TypeVar(0, 8)),
-                          TypeVar(1, 8)
+                          TypeApp(TypeVar(3, 4), TypeVar(0, 4)),
+                          TypeVar(1, 4)
                         ),
-                        TypeVar(2, 8)
+                        TypeVar(2, 4)
                       ),
                       TermApp(
                         TermFold(
                           TypeApp(
                             TypeApp(
-                              TypeApp(TypeVar(4, 9), TypeVar(3, 9)),
-                              TypeVar(2, 9)
+                              TypeApp(TypeVar(4, 5), TypeVar(3, 5)),
+                              TypeVar(2, 5)
                             ),
-                            TypeVar(1, 9)
+                            TypeVar(1, 5)
                           )
                         ),
-                        TermRecord(List(("1", TermVar(0, 9))))
+                        TermRecord(List(("1", TermVar(0, 5))))
                       )
                     )
                   )
@@ -1014,9 +964,6 @@ object DesugarSpec extends TestSuite {
         List(("&add", NameBind)) // Built-in function.
       ) ==> (List(
         ("sum", NameBind),
-        ("y", NameBind),
-        ("x", NameBind),
-        ("^sum", NameBind),
         ("&add", NameBind)
       ),
       List(
@@ -1139,8 +1086,6 @@ object DesugarSpec extends TestSuite {
         )
       ) ==> (List(
         ("some_value", NameBind),
-        ("x", NameBind),
-        ("^some_value", NameBind),
         ("Some", NameBind),
         ("OptionInt", NameBind)
       ),
@@ -1198,9 +1143,6 @@ object DesugarSpec extends TestSuite {
         )
       ) ==> (List(
         ("some_t_value", NameBind),
-        ("x", NameBind),
-        ("^some_t_value", NameBind),
-        ("T", NameBind),
         ("Some", NameBind),
         ("Option", NameBind)
       ),
@@ -1264,11 +1206,7 @@ object DesugarSpec extends TestSuite {
             )
           )
         )
-      ) ==> (List(
-        ("zero_to_one", NameBind),
-        ("x", NameBind),
-        ("^zero_to_one", NameBind)
-      ),
+      ) ==> (List(("zero_to_one", NameBind)),
       List(
         Bind(
           "zero_to_one",
@@ -1346,10 +1284,6 @@ object DesugarSpec extends TestSuite {
         ) // Built-in function.
       ) ==> (List(
         ("some_plus_one", NameBind),
-        ("v", NameBind),
-        ("x", NameBind),
-        ("^some_plus_one", NameBind),
-        ("T", NameBind),
         ("Some", NameBind),
         ("Option", NameBind),
         ("&add", NameBind)
@@ -1445,10 +1379,6 @@ object DesugarSpec extends TestSuite {
         List(("&sub", NameBind), ("&add", NameBind)) // Built-in function.
       ) ==> (List(
         ("fib", NameBind),
-        ("b", NameBind),
-        ("a", NameBind),
-        ("n", NameBind),
-        ("^fib", NameBind),
         ("&sub", NameBind),
         ("&add", NameBind)
       ),
@@ -1525,7 +1455,6 @@ object DesugarSpec extends TestSuite {
         List(("&multiply", NameBind), ("&add", NameBind)) // Built-in function.
       ) ==> (List(
         ("one_and_two_plus_one", NameBind),
-        ("x", NameBind),
         ("&multiply", NameBind),
         ("&add", NameBind)
       ),
@@ -1573,8 +1502,6 @@ object DesugarSpec extends TestSuite {
         List(("&multiply", NameBind), ("&add", NameBind)) // Built-in function.
       ) ==> (List(
         ("compute_z", NameBind),
-        ("y", NameBind),
-        ("x", NameBind),
         ("&multiply", NameBind),
         ("&add", NameBind)
       ),
@@ -1633,8 +1560,6 @@ object DesugarSpec extends TestSuite {
         List(("&add", NameBind)) // Built-in function.
       ) ==> (List(
         ("plus_one", NameBind),
-        ("f", NameBind),
-        ("x", NameBind),
         ("&add", NameBind)
       ),
       List(
@@ -1702,10 +1627,6 @@ object DesugarSpec extends TestSuite {
         List(("&multiply", NameBind), ("&add", NameBind)) // Built-in function.
       ) ==> (List(
         ("compute_three", NameBind),
-        ("g", NameBind),
-        ("z", NameBind),
-        ("y", NameBind),
-        ("x", NameBind),
         ("&multiply", NameBind),
         ("&add", NameBind)
       ),
@@ -1801,9 +1722,6 @@ object DesugarSpec extends TestSuite {
         )
       ) ==> (List(
         ("option_and_one", NameBind),
-        ("a", NameBind),
-        ("x", NameBind),
-        ("^option_and_one", NameBind),
         ("map", NameBind),
         ("OptionInt", NameBind),
         ("&add", NameBind)
