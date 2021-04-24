@@ -39,7 +39,6 @@ case class TermRecord(v: List[(String, Term)]) extends Term
 case class TermTag(i: String, t: Term, typ: Type) extends Term
 case class TermAscribe(t: Term, typ: Type) extends Term
 case class TermFold(t: Type) extends Term
-case class TermUnfold(t: Type) extends Term
 // Higher Kind
 case class TermTAbs(i: String, t: Term) extends Term
 case class TermTApp(t: Term, typ: Type) extends Term

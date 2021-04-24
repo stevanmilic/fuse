@@ -21,27 +21,27 @@ object TypeChecker {
     ???
 
   def typeOf(ctx: Context, term: Term): Either[String, Type] = term match {
-    case TermAscribe(t1, tyT2) =>
+    case TermAscribe(t1, typeToAscribe) =>
       for {
-        _ <- checkKindStar(ctx, tyT2)
+        _ <- checkKindStar(ctx, typeToAscribe)
         tyT1 <- typeOf(ctx, t1)
-        t <- isTypeEqual(ctx, tyT1, tyT2) match {
-          case true  => Right(tyT2)
+        t <- isTypeEqual(ctx, tyT1, typeToAscribe) match {
+          case true  => Right(typeToAscribe)
           case false => Left(Error.AscribeWrongType)
         }
       } yield t
-    case TermVar(i, _) => Context.getTypeFromContext(ctx, i)
-    case TermClosure(v, Some(tyT1), e) =>
-      val ctx1 = Context.addBinding(ctx, v, VarBind(tyT1))
-      typeOf(ctx1, e).map(tyT2 => TypeArrow(tyT1, typeShift(-1, tyT2)))
+    case TermVar(idx, _) => Context.getTypeFromContext(ctx, idx)
+    case TermClosure(variable, Some(varType), expr) =>
+      val ctx1 = Context.addBinding(ctx, variable, VarBind(varType))
+      typeOf(ctx1, expr).map(tyT2 => TypeArrow(varType, typeShift(-1, tyT2)))
     case TermClosure(_, None, _) =>
       throw new Exception("Closure without annotation not supported.")
-    case TermAbs(v, tyT1, e, _) =>
-      val ctx1 = Context.addBinding(ctx, v, VarBind(tyT1))
+    case TermAbs(variable, variableType, expr, _) =>
+      val ctx1 = Context.addBinding(ctx, variable, VarBind(variableType))
       for {
-        _ <- checkKindStar(ctx, tyT1)
-        tyT2 <- typeOf(ctx1, e)
-      } yield TypeArrow(tyT1, typeShift(-1, tyT2))
+        _ <- checkKindStar(ctx, variableType)
+        tyT2 <- typeOf(ctx1, expr)
+      } yield TypeArrow(variableType, typeShift(-1, tyT2))
     case TermApp(t1, t2) =>
       for {
         tyT1 <- typeOf(ctx, t1)
@@ -53,13 +53,13 @@ object TypeChecker {
           case _ => Left(Error.AppNotArrowType)
         }
       } yield ty
-    case TermProj(t, l) =>
+    case TermProj(t, label) =>
       typeOf(ctx, t).flatMap(simplifyType(ctx, _) match {
         case TypeRecord(fields) =>
           fields
-            .find { case (f, _) => f == l }
+            .find { case (f, _) => f == label }
             .map(_._2)
-            .toRight(Error.ProjFieldNotFound(l))
+            .toRight(Error.ProjFieldNotFound(label))
         case _ => Left(Error.ProjNotRecordType)
       })
     case TermFix(t1) =>
@@ -80,10 +80,10 @@ object TypeChecker {
           Right(TypeArrow(typeSubstituteTop(tyS, tyT), tyS))
         case _ => Left(Error.FoldNotRecursiveType)
       }
-    case TermLet(x, t1, t2) =>
+    case TermLet(variable, t1, t2) =>
       for {
         tyT1 <- typeOf(ctx, t1)
-        ctx1 = Context.addBinding(ctx, x, VarBind(tyT1))
+        ctx1 = Context.addBinding(ctx, variable, VarBind(tyT1))
         tyT2 <- typeOf(ctx1, t2)
       } yield typeShift(-1, tyT2)
     case TermTAbs(v, t) =>
@@ -101,31 +101,40 @@ object TypeChecker {
           case _ => Left(Error.TAppNotAllType)
         }
       } yield ty
-    case TermMatch(t1, cases) =>
+    case TermMatch(exprTerm, cases) =>
       for {
-        ty1 <- typeOf(ctx, t1)
-        tyT1 = unfoldType(ctx, ty1)
-        tys <- cases.traverse((v) =>
+        ty1 <- typeOf(ctx, exprTerm)
+        exprType = unfoldType(ctx, ty1)
+        caseExprTypes <- cases.traverse((v) =>
           for {
-            tyP <- patternOfType(ctx, v._1)
+            // TODO: Type shift should happen here somewhere.
+            value <- typeOfPattern(ctx, v._1, exprType)
+            (ctx1, patternType) = value
             _ <-
-              if (tyP.isEmpty || isTypeEqual(ctx, tyT1, tyP.get)) Right()
+              if (
+                patternType.isEmpty || isTypeEqual(
+                  ctx,
+                  exprType,
+                  patternType.get
+                )
+              ) Right()
               else Left(Error.MatchPatternTypeMismatch)
-            ty2 <- typeOf(ctx, v._2)
-          } yield ty2
+            caseExprType <- typeOf(ctx, v._2)
+          } yield caseExprType
         )
         ty <-
-          if (tys.forall(isTypeEqual(ctx, _, tys.head))) Right(tys.head)
+          if (caseExprTypes.forall(isTypeEqual(ctx, _, caseExprTypes.head)))
+            Right(caseExprTypes.head)
           else Left(Error.MatchCasesTypeMismach)
       } yield ty
-    case TermTag(i, t1, ty1) =>
+    case TermTag(tag, t1, ty1) =>
       simplifyType(ctx, ty1) match {
         case TypeVariant(fields) =>
           for {
             tyTiExpected <- fields
-              .find(_._1 == i)
+              .find(_._1 == tag)
               .map(_._2)
-              .toRight(Error.TagVariantFieldNotFound(i))
+              .toRight(Error.TagVariantFieldNotFound(tag))
             tyTi <- typeOf(ctx, t1)
             ty <-
               if (isTypeEqual(ctx, tyTi, tyTiExpected)) Right(ty1)
@@ -142,8 +151,47 @@ object TypeChecker {
 
   }
 
-  def patternOfType(ctx: Context, p: Pattern): Either[String, Option[Type]] =
-    ???
+  def typeOfPattern(
+      ctx: Context,
+      p: Pattern,
+      expr: Type
+  ): Either[String, (Context, Option[Type])] =
+    p match {
+      case t: Term        => typeOf(ctx, t).map(v => (ctx, Some(v)))
+      case PatternDefault => Right((ctx, None))
+      case PatternNode(tag, vars) =>
+        expr match {
+          case TypeVariant(fields) =>
+            for {
+              tagType <- fields
+                .find(_._1 == tag)
+                .map(_._2)
+                .toRight(Error.MatchPatternNotInVariant(tag))
+              ctx1 <- bindFieldsToVars(ctx, fields, vars)
+            } yield (ctx1, Some(expr))
+          case TypeRecord(fields) =>
+            for {
+              idx <- Context
+                .nameToIndex(ctx, tag)
+                .toRight(Error.MatchPatternRecordNotFound(tag))
+              tagRecord <- Context.getTypeFromContext(ctx, idx)
+              ctx1 <- bindFieldsToVars(ctx, fields, vars)
+            } yield (ctx1, Some(expr))
+          case _ => Left(Error.MatchPatternTypeMismatch)
+        }
+    }
+
+  def bindFieldsToVars(
+      ctx: Context,
+      fields: List[(String, Type)],
+      vars: List[String]
+  ): Either[String, Context] = fields.length == vars.length match {
+    case true =>
+      Right(fields.foldRight(ctx) { case ((varName, varType), ctxAcc) =>
+        Context.addBinding(ctxAcc, varName, VarBind(varType))
+      })
+    case false => Left(Error.MatchPatternWrongVariables)
+  }
 
   def unfoldType(ctx: Context, tyS: Type): Type =
     simplifyType(ctx, tyS) match {
@@ -245,6 +293,12 @@ object TypeChecker {
     val MatchPatternTypeMismatch =
       "Pattern type is not the same as the type of the match expression."
     val MatchCasesTypeMismach = "Type between cases don't match."
+    def MatchPatternNotInVariant(p: String) =
+      s"Pattern $p not found in type variant."
+    def MatchPatternRecordNotFound(p: String) =
+      s"Pattern $p not found for type record."
+    def MatchPatternWrongVariables =
+      "Pattern has wrong number of variables for the type."
     val TagNotVariantType = "Expected variant type on the tag."
     def TagVariantFieldNotFound(f: String) =
       s"Fied $f not found on the variant."
