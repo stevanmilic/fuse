@@ -15,24 +15,24 @@ object FuseParserSpec extends TestSuite {
       parse("type i32") ==> FPrimitiveTypeDef(FIdentifier("i32"))
     }
     test("parse sum type") {
-      parse("type bool:\n    true\n    false") ==> FSumTypeDef(
+      parse("type bool:\n    true\n    false") ==> FVariantTypeDef(
         FIdentifier("bool"),
         None,
         Seq(
-          FSumTypeValue(FIdentifier("true")),
-          FSumTypeValue(FIdentifier("false"))
+          FVariantTypeValue(FIdentifier("true")),
+          FVariantTypeValue(FIdentifier("false"))
         )
       )
     }
     test("parse struct type") {
-      parse("type Point:\n    x: i32\n    y: i32") ==> FStructTypeDef(
+      parse("type Point:\n    x: i32\n    y: i32") ==> FRecordTypeDef(
         FIdentifier("Point"),
         None,
         Seq(
-          FStructTypeField(
+          FRecordTypeField(
             FParam(FIdentifier("x"), FSimpleType(FIdentifier("i32")))
           ),
-          FStructTypeField(
+          FRecordTypeField(
             FParam(FIdentifier("y"), FSimpleType(FIdentifier("i32")))
           )
         )
@@ -46,12 +46,12 @@ object FuseParserSpec extends TestSuite {
       )
     }
     test("parse generic type") {
-      parse("type Option[T]:\n    None\n    Some(T)") ==> FSumTypeDef(
+      parse("type Option[T]:\n    None\n    Some(T)") ==> FVariantTypeDef(
         FIdentifier("Option"),
         Some(Seq(FTypeParam(FIdentifier("T")))),
         Seq(
-          FSumTypeValue(FIdentifier("None")),
-          FSumTypeValue(
+          FVariantTypeValue(FIdentifier("None")),
+          FVariantTypeValue(
             FIdentifier("Some"),
             Some(Right(Seq(FSimpleType(FIdentifier("T")))))
           )
@@ -59,14 +59,14 @@ object FuseParserSpec extends TestSuite {
       )
     }
     test("parse generic type with two params") {
-      parse("type Map[K, V]:\n    key: K\n    value: V") ==> FStructTypeDef(
+      parse("type Map[K, V]:\n    key: K\n    value: V") ==> FRecordTypeDef(
         FIdentifier("Map"),
         Some(Seq(FTypeParam(FIdentifier("K")), FTypeParam(FIdentifier("V")))),
         Seq(
-          FStructTypeField(
+          FRecordTypeField(
             FParam(FIdentifier("key"), FSimpleType(FIdentifier("K")))
           ),
-          FStructTypeField(
+          FRecordTypeField(
             FParam(FIdentifier("value"), FSimpleType(FIdentifier("V")))
           )
         )
@@ -99,11 +99,11 @@ object FuseParserSpec extends TestSuite {
     test("parse generic sum type with product value") {
       parse(
         "type List[A]:\n    Cons(head: A, t: List[A])\n    Nil"
-      ) ==> FSumTypeDef(
+      ) ==> FVariantTypeDef(
         FIdentifier("List"),
         Some(Seq(FTypeParam(FIdentifier("A")))),
         Seq(
-          FSumTypeValue(
+          FVariantTypeValue(
             FIdentifier("Cons"),
             Some(
               Left(
@@ -120,7 +120,7 @@ object FuseParserSpec extends TestSuite {
               )
             )
           ),
-          FSumTypeValue(FIdentifier("Nil"))
+          FVariantTypeValue(FIdentifier("Nil"))
         )
       )
     }
@@ -185,8 +185,7 @@ object FuseParserSpec extends TestSuite {
         FIdentifier("IntTuple"),
         None,
         FTupleType(
-          FSimpleType(FIdentifier("Int")),
-          FSimpleType(FIdentifier("Int"))
+          Seq(FSimpleType(FIdentifier("Int")), FSimpleType(FIdentifier("Int")))
         )
       )
     }

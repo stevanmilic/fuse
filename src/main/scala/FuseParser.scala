@@ -12,21 +12,21 @@ object FuseParser {
 
   case class FPrimitiveTypeDef(t: FIdentifier) extends FNode
 
-  case class FSumTypeValue(
+  case class FVariantTypeValue(
       v: FIdentifier,
       t: Option[Either[FParams, FTypes]] = None
   )
-  case class FSumTypeDef(
+  case class FVariantTypeDef(
       i: FIdentifier,
       t: FTypeParamClause,
-      values: Seq[FSumTypeValue]
+      values: Seq[FVariantTypeValue]
   ) extends FNode
 
-  case class FStructTypeField(p: FParam)
-  case class FStructTypeDef(
+  case class FRecordTypeField(p: FParam)
+  case class FRecordTypeDef(
       i: FIdentifier,
       t: FTypeParamClause,
-      fields: Seq[FStructTypeField]
+      fields: Seq[FRecordTypeField]
   ) extends FNode
 
   case class FTupleTypeDef(
@@ -77,8 +77,8 @@ class FuseParser(val input: ParserInput) extends FuseTypesParser {
 
   def InputLine = rule { Program ~ EOI }
   def Program: Rule1[FNode] = rule {
-    StructTypeDef |
-      SumTypeDef |
+    RecordTypeDef |
+      VariantTypeDef |
       TupleTypeDef |
       TypeAlias |
       PrimitiveTypeDef |
@@ -91,22 +91,25 @@ class FuseParser(val input: ParserInput) extends FuseTypesParser {
   def TypeDef = rule { "type" ~ Id }
   def PrimitiveTypeDef = rule { TypeDef ~> FPrimitiveTypeDef }
 
-  def SumTypeDef = {
-    def SumTypeValueArgs = rule {
+  def VariantTypeDef = {
+    def VariantTypeValueArgs = rule {
       "(" ~ (Params ~> (Left(_)) | Types ~> (Right(_))) ~ ")"
     }
-    val SumTypeValue = () => rule { Id ~ SumTypeValueArgs.? ~> FSumTypeValue }
+    val VariantTypeValue = () =>
+      rule { Id ~ VariantTypeValueArgs.? ~> FVariantTypeValue }
     rule {
-      TypeDef ~ TypeParamClause.? ~ ":" ~ oneOrMoreWithIndent(SumTypeValue) ~>
-        FSumTypeDef
+      TypeDef ~ TypeParamClause.? ~ ":" ~ oneOrMoreWithIndent(
+        VariantTypeValue
+      ) ~>
+        FVariantTypeDef
     }
   }
 
-  def StructTypeDef = {
-    val StructTypeField = () => rule { Param ~> FStructTypeField }
+  def RecordTypeDef = {
+    val RecordTypeField = () => rule { Param ~> FRecordTypeField }
     rule {
       TypeDef ~ TypeParamClause.? ~ ":" ~
-        oneOrMoreWithIndent(StructTypeField) ~> FStructTypeDef
+        oneOrMoreWithIndent(RecordTypeField) ~> FRecordTypeDef
     }
   }
 
