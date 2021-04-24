@@ -80,12 +80,6 @@ object TypeChecker {
           Right(TypeArrow(typeSubstituteTop(tyS, tyT), tyS))
         case _ => Left(Error.FoldNotRecursiveType)
       }
-    case TermUnfold(tyS) =>
-      simplifyType(ctx, tyS) match {
-        case TypeRec(_, _, tyT) =>
-          Right(TypeArrow(tyS, typeSubstituteTop(tyS, tyT)))
-        case _ => Left(Error.UnfoldNotRecursiveType)
-      }
     case TermLet(x, t1, t2) =>
       for {
         tyT1 <- typeOf(ctx, t1)
@@ -110,7 +104,7 @@ object TypeChecker {
     case TermMatch(t1, cases) =>
       for {
         ty1 <- typeOf(ctx, t1)
-        tyT1 = simplifyType(ctx, ty1)
+        tyT1 = unfoldType(ctx, ty1)
         tys <- cases.traverse((v) =>
           for {
             tyP <- patternOfType(ctx, v._1)
@@ -147,6 +141,48 @@ object TypeChecker {
     case TermUnit      => Right(TypeUnit)
 
   }
+
+  def patternOfType(ctx: Context, p: Pattern): Either[String, Option[Type]] =
+    ???
+
+  def unfoldType(ctx: Context, tyS: Type): Type =
+    simplifyType(ctx, tyS) match {
+      case TypeRec(_, _, tyT) => typeSubstituteTop(tyS, tyT)
+      case ty                 => ty
+    }
+
+  def typeShift(v: Int, t: Type): Type = ???
+
+  def isTypeEqual(ctx: Context, ty1: Type, ty2: Type): Boolean = ???
+
+  def simplifyType(ctx: Context, ty: Type): Type = {
+    val tyT = ty match {
+      case TypeApp(tyT1, tyT2) => TypeApp(simplifyType(ctx, tyT1), tyT2)
+      case _                   => ty
+    }
+    computeType(ctx, ty) match {
+      case Some(ty1) => simplifyType(ctx, ty1)
+      case _         => ty
+    }
+  }
+
+  def computeType(ctx: Context, ty: Type): Option[Type] = ty match {
+    case TypeVar(idx, _) => getTypeAbb(ctx, idx)
+    case TypeApp(TypeAbs(_, tyT12), tyT2) =>
+      Some(typeSubstituteTop(tyT2, tyT12))
+    case _ => None
+  }
+
+  def getTypeAbb(ctx: Context, index: Int): Option[Type] =
+    Context
+      .getBinding(ctx, index)
+      .toOption
+      .flatMap(_ match {
+        case TypeAbbBind(ty, _) => Some(ty)
+        case _                  => None
+      })
+
+  def typeSubstituteTop(ty1: Type, ty2: Type): Type = ???
 
   def kindOf(ctx: Context, t: Type): Either[String, Kind] = t match {
     case TypeArrow(ty1, ty2) =>
@@ -192,42 +228,6 @@ object TypeChecker {
         case TypeAbbBind(_, None)    => Left(Error.NoKindForVariable(ctx, idx))
         case _                       => Left(Error.WrongKindBindingForVariable(ctx, idx))
       })
-
-  def patternOfType(ctx: Context, p: Pattern): Either[String, Option[Type]] =
-    ???
-
-  def typeShift(v: Int, t: Type): Type = ???
-
-  def isTypeEqual(ctx: Context, ty1: Type, ty2: Type): Boolean = ???
-
-  def simplifyType(ctx: Context, ty: Type): Type = {
-    val tyT = ty match {
-      case TypeApp(tyT1, tyT2) => TypeApp(simplifyType(ctx, tyT1), tyT2)
-      case _                   => ty
-    }
-    computeType(ctx, ty) match {
-      case Some(ty1) => simplifyType(ctx, ty1)
-      case _         => ty
-    }
-  }
-
-  def computeType(ctx: Context, ty: Type): Option[Type] = ty match {
-    case TypeVar(idx, _) => getTypeAbb(ctx, idx)
-    case TypeApp(TypeAbs(_, tyT12), tyT2) =>
-      Some(typeSubstituteTop(tyT2, tyT12))
-    case _ => None
-  }
-
-  def getTypeAbb(ctx: Context, index: Int): Option[Type] =
-    Context
-      .getBinding(ctx, index)
-      .toOption
-      .flatMap(_ match {
-        case TypeAbbBind(ty, _) => Some(ty)
-        case _                  => None
-      })
-
-  def typeSubstituteTop(ty1: Type, ty2: Type): Type = ???
 
   object Error {
     // Type Errors
