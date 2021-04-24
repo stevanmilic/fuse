@@ -1662,44 +1662,6 @@ object DesugarSpec extends TestSuite {
     test(
       "desuagar function with let expression wtih lambda expression using multiple params"
     ) {
-      val t = List(
-        Bind(
-          "compute_three",
-          TermAbbBind(
-            TermAbs(
-              "_",
-              TypeUnit,
-              TermLet(
-                "g",
-                TermClosure(
-                  "x",
-                  Some(TypeInt),
-                  TermClosure(
-                    "y",
-                    Some(TypeInt),
-                    TermClosure(
-                      "z",
-                      Some(TypeInt),
-                      TermApp(
-                        TermApp(
-                          TermVar(3, 5),
-                          TermApp(
-                            TermApp(TermVar(4, 5), TermVar(2, 5)),
-                            TermVar(1, 5)
-                          )
-                        ),
-                        TermVar(0, 5)
-                      )
-                    )
-                  )
-                ),
-                TermApp(TermVar(0, 3), TermInt(5))
-              ),
-              Some(TypeInt)
-            )
-          )
-        )
-      )
       desugar(
         FFuncDecl(
           FFuncSig(
@@ -1789,7 +1751,93 @@ object DesugarSpec extends TestSuite {
         )
       ))
     }
-    test("desuagar function with call expression wtih lambda expression") {}
+    test("desuagar function with call expression wtih inline lambda argument") {
+      desugar(
+        FFuncDecl(
+          FFuncSig(
+            FIdentifier("option_and_one"),
+            None,
+            Some(
+              Seq(
+                FParam(
+                  FIdentifier("x"),
+                  FSimpleType(FIdentifier("OptionInt"))
+                )
+              )
+            ),
+            FSimpleType(FIdentifier("OptionInt"), None)
+          ),
+          Seq(
+            FApp(
+              FVar("map"),
+              Seq(
+                Some(
+                  Seq(
+                    FVar("x"),
+                    FAbs(
+                      Seq(
+                        FBinding(
+                          FIdentifier("a"),
+                          Some(FSimpleType(FIdentifier("i32")))
+                        )
+                      ),
+                      Seq(
+                        FAddition(
+                          FVar("a"),
+                          FInt(1)
+                        )
+                      )
+                    )
+                  )
+                )
+              )
+            )
+          )
+        ),
+        List(
+          ("map", NameBind),
+          ("OptionInt", NameBind),
+          ("&add", NameBind)
+        )
+      ) ==> (List(
+        ("option_and_one", NameBind),
+        ("a", NameBind),
+        ("x", NameBind),
+        ("^option_and_one", NameBind),
+        ("map", NameBind),
+        ("OptionInt", NameBind),
+        ("&add", NameBind)
+      ),
+      List(
+        Bind(
+          "option_and_one",
+          TermAbbBind(
+            TermFix(
+              TermAbs(
+                "^option_and_one",
+                TypeArrow(TypeVar(1, 3), TypeVar(1, 3)),
+                TermAbs(
+                  "x",
+                  TypeVar(2, 4),
+                  TermApp(
+                    TermApp(
+                      TermVar(2, 5),
+                      TermVar(0, 5)
+                    ),
+                    TermClosure(
+                      "a",
+                      Some(TypeInt),
+                      TermApp(TermApp(TermVar(5, 6), TermVar(0, 6)), TermInt(1))
+                    )
+                  ),
+                  Some(TypeVar(4, 6))
+                )
+              )
+            )
+          )
+        )
+      ))
+    }
     test("desugar type func decls") {}
     // TODO: Learn how to represent traits (type classes) in the lambda calculus.
     // test("desugar trait decl") {}

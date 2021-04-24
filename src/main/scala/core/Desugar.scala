@@ -173,12 +173,14 @@ object Desugar {
       e1: FExpr,
       e2: FExpr
   ): State[Context, Term] = for {
-    // TODO: Handle the case when the func isn't found in the context.
-    funcVar <- toTermVar(func)
+    funcVar <- toTermVar(func).map(_ match {
+      case Some(v) => v
+      case None    => throw new Exception(s"operator $func not found")
+    })
     t1 <- toTerm(e1)
     t2 <- toTerm(e2)
 
-  } yield TermApp(TermApp(funcVar.get, t1), t2)
+  } yield TermApp(TermApp(funcVar, t1), t2)
 
   def toMatchCase(
       p: FPattern,
