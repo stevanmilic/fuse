@@ -45,11 +45,12 @@ object Desugar {
         a <- toType(t)
         b <- bindTypeAbb(i, abs._2(a))
       } yield List(b)
-    case FFuncDecl(sig @ FFuncSig(FIdentifier(i), _, _, _), exprs) => {
+    case FFuncDecl(sig @ FFuncSig(FIdentifier(i), tp, _, _), exprs) => {
       for {
+        t <- withTermTypeAbs(tp)
         abs <- withFuncAbs(sig)
         e <- toTermExpr(exprs.toList)
-        b <- bindTermAbb(i, abs(e))
+        b <- bindTermAbb(i, t(abs(e)))
       } yield List(b)
     }
     case _ => throw new Exception("not supported decl")
@@ -70,10 +71,19 @@ object Desugar {
   def withFuncAbs(s: FFuncSig): State[Context, Term => Term] = State { ctx =>
     s.p match {
       case Some(params) =>
-        val c1 =
-          params.foldLeft(ctx)((acc, p) => Context.addName(acc, p.i.value))
+        // The implicit param is added to represent the function we abstract,
+        // in order to provide possibility for recursive call. Note that the
+        // abstraction is wrapped in a fix combinator.
+        val funParam = FParam(
+          FIdentifier(toRecAbsId(s.i.value)),
+          FFuncType(params.map(_.t), s.r)
+        )
+        val paramsWithFun = funParam :: params.toList
+        val c1 = paramsWithFun.foldLeft(ctx)((acc, p) =>
+          Context.addName(acc, p.i.value)
+        )
         val abs = (e: Term) =>
-          params
+          paramsWithFun
             .foldRight((c1, e)) { case (p, (c, acc)) =>
               val ::(_, c2) = c
               // NOTE: The return type specified by the function signature
@@ -88,7 +98,9 @@ object Desugar {
               (c2, abs)
             }
             ._2
-        (c1, abs)
+        // NOTE: The abstraction is wrapped with a fix combinator to implement
+        // recursion.
+        (c1, e => TermFix(abs(e)))
       case None =>
         val retType = toType(s.r).runA(ctx).value
         (ctx, e => TermAbs("_", TypeUnit, e, Some(retType)))
@@ -104,10 +116,10 @@ object Desugar {
         val v = e :: args.toList.flatten.flatten
         v.traverse(toTerm(_)).map(_.reduceLeft(TermApp(_, _))).run(ctx).value
       case FMultiplication(i1, i2) =>
-        toTermOperator("int_mp", ctx, i1, i2)
+        toTermOperator("&multiply", ctx, i1, i2)
       // TODO: Add other operators.
       case FAddition(i1, i2) =>
-        toTermOperator("int_add", ctx, i1, i2)
+        toTermOperator("&add", ctx, i1, i2)
       case FVar(i) =>
         toTermVar(i, ctx) match {
           case Some(v) => (ctx, v)
@@ -139,6 +151,8 @@ object Desugar {
       case Some(indx) => Some(TermVar(indx, c.length))
       case None       => None
     }
+
+  def toRecAbsId(i: String): String = s"^$i"
 
   // # Term # region_end
 
@@ -330,6 +344,8 @@ object Desugar {
     case None    => i
   }
 
+  // The record constructor has a prefix "%" that should be searched during
+  // type checking when the record type is found in the application.
   def toRecordConstructorId(i: String) = s"%$i"
 
   // # Constructors # region_end
