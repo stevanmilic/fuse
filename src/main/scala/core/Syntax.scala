@@ -1,18 +1,25 @@
 package core
 
+sealed trait Kind
+case object KindStar extends Kind
+case class KindArrow(k1: Kind, k2: Kind) extends Kind
+
 sealed trait Type
 
-case class TypeVar(i1: Integer, i2: Integer) extends Type
+case class TypeVar(index: Integer, length: Integer) extends Type
 case class TypeId(i: String) extends Type
 case class TypeArrow(t1: Type, t2: Type) extends Type
 case object TypeUnit extends Type
 case class TypeRecord(f: List[(String, Type)]) extends Type
 case class TypeVariant(v: List[(String, Type)]) extends Type
+case class TypeRec(v: String, k: Kind, t: Type) extends Type
+case class TypeAll(i: String, k: Kind, t: Type) extends Type
+case class TypeAbs(i: String, t: Type) extends Type
+case class TypeApp(t1: Type, t2: Type) extends Type
 case object TypeBool extends Type
 case object TypeString extends Type
 case object TypeFloat extends Type
 case object TypeInt extends Type
-case class TypeRec(v: String, t: Type) extends Type
 
 sealed trait Term
 
@@ -36,7 +43,7 @@ case object TermUnit extends Term
 sealed trait Binding
 
 case object NameBind extends Binding
-case object TypeVarBind extends Binding
+case class TypeVarBind(k: Kind) extends Binding
 case class VarBind(t: Type) extends Binding
 case class TypeAbbBind(t: Type) extends Binding
 
