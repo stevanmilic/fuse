@@ -1,55 +1,55 @@
 package core
 
-import parser.FuseParser._
-import parser.FuseLexicalParser._
-import parser.FuseTypesParser._
+import cats.data.State
+import cats.implicits._
 import core.Context._
+import parser.FuseLexicalParser._
+import parser.FuseParser._
+import parser.FuseTypesParser._
 
 object Desugar {
-  def process(decls: Seq[FDecl]): (List[Bind], Context) = {
-    decls.foldLeft((List[Bind](), Context.empty))((acc, d) => {
-      val (b, c) = bind(d, acc._2)
-      (b :: acc._1, c)
-    })
-  }
+  def process(decls: List[FDecl]): State[Context, List[Bind]] =
+    decls.traverse(bind(_))
 
-  def bind(d: FDecl, c: Context): (Bind, Context) = d match {
-    case FVariantTypeDecl(FIdentifier(i), typ, values) => {
-      val t = values.toStream
-        .map(_.t)
-        .flatten
-        .flatMap(_ match {
-          case Right(r) => r
-          case Left(p)  => p.map(_.t)
-        })
-      val (c1, variant) = withTypeAbs(
-        typ,
-        withRecType(i, t, toTypeVariant(values))
-      )(c)
-      (Bind(i, TypeAbbBind(variant)), Context.addName(c1, i))
+  def bind(d: FDecl): State[Context, Bind] = State { ctx =>
+    d match {
+      case FVariantTypeDecl(FIdentifier(i), typ, values) => {
+        val t = values.toStream
+          .map(_.t)
+          .flatten
+          .flatMap(_ match {
+            case Right(r) => r
+            case Left(p)  => p.map(_.t)
+          })
+        val (c1, variant) = withTypeAbs(
+          typ,
+          withRecType(i, t, toTypeVariant(values))
+        )(ctx)
+        (Context.addName(c1, i), Bind(i, TypeAbbBind(variant)))
+      }
+      case FRecordTypeDecl(FIdentifier(i), typ, fields) => {
+        val p = fields.map(_.p)
+        val (c1, record) = withTypeAbs(
+          typ,
+          withRecType(i, p.map(_.t), toTypeRecord(p))
+        )(ctx)
+        (Context.addName(c1, i), Bind(i, TypeAbbBind(record)))
+      }
+      case FTupleTypeDecl(FIdentifier(i), typ, types) => {
+        val (c1, record) = withTypeAbs(
+          typ,
+          withRecType(i, types, toTupleTypeRecord(types))
+        )(ctx)
+        (Context.addName(c1, i), Bind(i, TypeAbbBind(record)))
+      }
+      case FTypeAlias(FIdentifier(i), typ, t) =>
+        val (c1, abb) = withTypeAbs(
+          typ,
+          withRecType(i, Seq(t), toType(t))
+        )(ctx)
+        (Context.addName(c1, i), Bind(i, TypeAbbBind(abb)))
+      case _ => throw new Exception("not supported decl")
     }
-    case FRecordTypeDecl(FIdentifier(i), typ, fields) => {
-      val p = fields.map(_.p)
-      val (c1, record) = withTypeAbs(
-        typ,
-        withRecType(i, p.map(_.t), toTypeRecord(p))
-      )(c)
-      (Bind(i, TypeAbbBind(record)), Context.addName(c1, i))
-    }
-    case FTupleTypeDecl(FIdentifier(i), typ, types) => {
-      val (c1, record) = withTypeAbs(
-        typ,
-        withRecType(i, types, toTupleTypeRecord(types))
-      )(c)
-      (Bind(i, TypeAbbBind(record)), Context.addName(c1, i))
-    }
-    case FTypeAlias(FIdentifier(i), typ, t) =>
-      val (c1, abb) = withTypeAbs(
-        typ,
-        withRecType(i, Seq(t), toType(t))
-      )(c)
-      (Bind(i, TypeAbbBind(abb)), Context.addName(c1, i))
-    case _ => throw new Exception("not supported decl")
   }
 
   def toTypeVariant(
@@ -64,7 +64,6 @@ object Desugar {
             (ti, toTupleTypeRecord(ts)(ctx)) :: acc
           case FVariantTypeValue(FIdentifier(ti), Some(Left(p))) =>
             (ti, toTypeRecord(p)(ctx)) :: acc
-          case _ => acc
         }
       })
     )
