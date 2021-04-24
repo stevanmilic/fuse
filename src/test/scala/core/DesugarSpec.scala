@@ -1156,7 +1156,7 @@ object DesugarSpec extends TestSuite {
                   "x",
                   TypeInt,
                   TermApp(TermVar(2, 4), TermVar(0, 4)),
-                  Some(TypeVar(1, 2))
+                  Some(TypeVar(3, 4))
                 )
               )
             )
@@ -1221,7 +1221,7 @@ object DesugarSpec extends TestSuite {
                     "x",
                     TypeVar(1, 4),
                     TermApp(TermVar(3, 5), TermVar(0, 5)),
-                    Some(TypeApp(TypeVar(2, 3), TypeVar(0, 3)))
+                    Some(TypeApp(TypeVar(4, 5), TypeVar(2, 5)))
                   )
                 )
               )
@@ -1504,9 +1504,291 @@ object DesugarSpec extends TestSuite {
         )
       ))
     }
-    test("desugar function with let expression") {}
-    test("desugar function with sequence of let expressions") {}
-    test("desugar function with let expression with lambda expression") {}
+    test("desugar function with let expression") {
+      desugar(
+        FFuncDecl(
+          FFuncSig(
+            FIdentifier("one_and_two_plus_one"),
+            None,
+            None,
+            FSimpleType(FIdentifier("i32"), None)
+          ),
+          Seq(
+            FLetExpr(
+              FIdentifier("x"),
+              None,
+              Seq(FMultiplication(FInt(1), FInt(2)))
+            ),
+            FAddition(FVar("x"), FInt(1))
+          )
+        ),
+        List(("&multiply", NameBind), ("&add", NameBind)) // Built-in function.
+      ) ==> (List(
+        ("one_and_two_plus_one", NameBind),
+        ("x", NameBind),
+        ("&multiply", NameBind),
+        ("&add", NameBind)
+      ),
+      List(
+        Bind(
+          "one_and_two_plus_one",
+          TermAbbBind(
+            TermAbs(
+              "_",
+              TypeUnit,
+              TermLet(
+                "x",
+                TermApp(TermApp(TermVar(0, 2), TermInt(1)), TermInt(2)),
+                TermApp(TermApp(TermVar(2, 3), TermVar(0, 3)), TermInt(1))
+              ),
+              Some(TypeInt)
+            )
+          )
+        )
+      ))
+    }
+    test("desugar function with sequence of let expressions") {
+      desugar(
+        FFuncDecl(
+          FFuncSig(
+            FIdentifier("compute_z"),
+            None,
+            None,
+            FSimpleType(FIdentifier("i32"), None)
+          ),
+          Seq(
+            FLetExpr(
+              FIdentifier("x"),
+              None,
+              Seq(FInt(5))
+            ),
+            FLetExpr(
+              FIdentifier("y"),
+              None,
+              Seq(FAddition(FVar("x"), FInt(1)))
+            ),
+            FMultiplication(FVar("x"), FVar("y"))
+          )
+        ),
+        List(("&multiply", NameBind), ("&add", NameBind)) // Built-in function.
+      ) ==> (List(
+        ("compute_z", NameBind),
+        ("y", NameBind),
+        ("x", NameBind),
+        ("&multiply", NameBind),
+        ("&add", NameBind)
+      ),
+      List(
+        Bind(
+          "compute_z",
+          TermAbbBind(
+            TermAbs(
+              "_",
+              TypeUnit,
+              TermLet(
+                "x",
+                TermInt(5),
+                TermLet(
+                  "y",
+                  TermApp(TermApp(TermVar(2, 3), TermVar(0, 3)), TermInt(1)),
+                  TermApp(TermApp(TermVar(2, 4), TermVar(1, 4)), TermVar(0, 4))
+                )
+              ),
+              Some(TypeInt)
+            )
+          )
+        )
+      ))
+    }
+    test("desugar function with let expression with lambda expression") {
+      desugar(
+        FFuncDecl(
+          FFuncSig(
+            FIdentifier("plus_one"),
+            None,
+            None,
+            FSimpleType(FIdentifier("i32"), None)
+          ),
+          Seq(
+            FLetExpr(
+              FIdentifier("f"),
+              None,
+              Seq(
+                FAbs(
+                  Seq(
+                    FBinding(
+                      FIdentifier("x"),
+                      Some(FSimpleType(FIdentifier("i32")))
+                    )
+                  ),
+                  Seq(
+                    FAddition(FVar("x"), FInt(1))
+                  )
+                )
+              )
+            ),
+            FApp(FVar("f"), Seq(Some(Seq(FInt(5)))))
+          )
+        ),
+        List(("&add", NameBind)) // Built-in function.
+      ) ==> (List(
+        ("plus_one", NameBind),
+        ("f", NameBind),
+        ("x", NameBind),
+        ("&add", NameBind)
+      ),
+      List(
+        Bind(
+          "plus_one",
+          TermAbbBind(
+            TermAbs(
+              "_",
+              TypeUnit,
+              TermLet(
+                "f",
+                TermClosure(
+                  "x",
+                  Some(TypeInt),
+                  TermApp(TermApp(TermVar(1, 2), TermVar(0, 2)), TermInt(1))
+                ),
+                TermApp(TermVar(0, 3), TermInt(5))
+              ),
+              Some(TypeInt)
+            )
+          )
+        )
+      ))
+    }
+    test(
+      "desuagar function with let expression wtih lambda expression using multiple params"
+    ) {
+      val t = List(
+        Bind(
+          "compute_three",
+          TermAbbBind(
+            TermAbs(
+              "_",
+              TypeUnit,
+              TermLet(
+                "g",
+                TermClosure(
+                  "x",
+                  Some(TypeInt),
+                  TermClosure(
+                    "y",
+                    Some(TypeInt),
+                    TermClosure(
+                      "z",
+                      Some(TypeInt),
+                      TermApp(
+                        TermApp(
+                          TermVar(3, 5),
+                          TermApp(
+                            TermApp(TermVar(4, 5), TermVar(2, 5)),
+                            TermVar(1, 5)
+                          )
+                        ),
+                        TermVar(0, 5)
+                      )
+                    )
+                  )
+                ),
+                TermApp(TermVar(0, 3), TermInt(5))
+              ),
+              Some(TypeInt)
+            )
+          )
+        )
+      )
+      desugar(
+        FFuncDecl(
+          FFuncSig(
+            FIdentifier("compute_three"),
+            None,
+            None,
+            FSimpleType(FIdentifier("i32"), None)
+          ),
+          Seq(
+            FLetExpr(
+              FIdentifier("g"),
+              None,
+              Seq(
+                FAbs(
+                  Seq(
+                    FBinding(
+                      FIdentifier("x"),
+                      Some(FSimpleType(FIdentifier("i32")))
+                    ),
+                    FBinding(
+                      FIdentifier("y"),
+                      Some(FSimpleType(FIdentifier("i32")))
+                    ),
+                    FBinding(
+                      FIdentifier("z"),
+                      Some(FSimpleType(FIdentifier("i32")))
+                    )
+                  ),
+                  Seq(
+                    FAddition(FMultiplication(FVar("x"), FVar("y")), FVar("z"))
+                  )
+                )
+              )
+            ),
+            FApp(FVar("g"), Seq(Some(Seq(FInt(1), FInt(2), FInt(3)))))
+          )
+        ),
+        List(("&multiply", NameBind), ("&add", NameBind)) // Built-in function.
+      ) ==> (List(
+        ("compute_three", NameBind),
+        ("g", NameBind),
+        ("z", NameBind),
+        ("y", NameBind),
+        ("x", NameBind),
+        ("&multiply", NameBind),
+        ("&add", NameBind)
+      ),
+      List(
+        Bind(
+          "compute_three",
+          TermAbbBind(
+            TermAbs(
+              "_",
+              TypeUnit,
+              TermLet(
+                "g",
+                TermClosure(
+                  "x",
+                  Some(TypeInt),
+                  TermClosure(
+                    "y",
+                    Some(TypeInt),
+                    TermClosure(
+                      "z",
+                      Some(TypeInt),
+                      TermApp(
+                        TermApp(
+                          TermVar(4, 5),
+                          TermApp(
+                            TermApp(TermVar(3, 5), TermVar(2, 5)),
+                            TermVar(1, 5)
+                          )
+                        ),
+                        TermVar(0, 5)
+                      )
+                    )
+                  )
+                ),
+                TermApp(
+                  TermApp(TermApp(TermVar(0, 6), TermInt(1)), TermInt(2)),
+                  TermInt(3)
+                )
+              ),
+              Some(TypeInt)
+            )
+          )
+        )
+      ))
+    }
     test("desuagar function with call expression wtih lambda expression") {}
     test("desugar type func decls") {}
     // TODO: Learn how to represent traits (type classes) in the lambda calculus.

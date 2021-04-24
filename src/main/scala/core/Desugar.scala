@@ -16,41 +16,40 @@ object Desugar {
 
   def bind(d: FDecl): State[Context, List[Bind]] = d match {
     case FVariantTypeDecl(FIdentifier(i), typ, values) =>
+      val variant = toTypeVariant(values)
+      val rec = withRecType(i, typ, variant)
       for {
-        abs <- withTypeAbs(typ)
-        r <- withRecType(i, abs._1)
-        t <- toTypeVariant(values)
-        hb <- bindTypeAbb(i, abs._2(r(t)))
+        abs <- withTypeAbs(typ, rec)
+        hb <- bindTypeAbb(i, abs)
         tb <- buildVariantConstructors(i, typ, values.toList)
       } yield hb :: tb
     case FRecordTypeDecl(FIdentifier(i), typ, fields) =>
+      val record = toTypeRecord(fields.map(_.p))
+      val rec = withRecType(i, typ, record)
       for {
-        abs <- withTypeAbs(typ)
-        r <- withRecType(i, abs._1)
-        t <- toTypeRecord(fields.map(_.p))
-        hb <- bindTypeAbb(i, abs._2(r(t)))
+        abs <- withTypeAbs(typ, rec)
+        hb <- bindTypeAbb(i, abs)
         tb <- buildRecordConstructor(i, typ, Left(fields.map(_.p)))
       } yield hb :: List(tb)
     case FTupleTypeDecl(FIdentifier(i), typ, types) =>
+      val tuple = toTupleTypeRecord(types)
+      val rec = withRecType(i, typ, tuple)
       for {
-        abs <- withTypeAbs(typ)
-        r <- withRecType(i, abs._1)
-        t <- toTupleTypeRecord(types)
-        hb <- bindTypeAbb(i, abs._2(r(t)))
+        abs <- withTypeAbs(typ, rec)
+        hb <- bindTypeAbb(i, abs)
         tb <- buildRecordConstructor(i, typ, Right(types))
       } yield hb :: List(tb)
     case FTypeAlias(FIdentifier(i), typ, t) =>
+      val alias = toType(t)
       for {
-        abs <- withTypeAbs(typ)
-        a <- toType(t)
-        b <- bindTypeAbb(i, abs._2(a))
+        abs <- withTypeAbs(typ, alias)
+        b <- bindTypeAbb(i, abs)
       } yield List(b)
     case FFuncDecl(sig @ FFuncSig(FIdentifier(i), tp, _, _), exprs) => {
       for {
         t <- withTermTypeAbs(tp)
-        abs <- withFuncAbs(sig)
-        e <- toTermExpr(exprs.toList)
-        b <- bindTermAbb(i, t(abs(e)))
+        abs <- withFuncAbs(sig, toTermExpr(exprs.toList))
+        b <- bindTermAbb(i, t(abs))
       } yield List(b)
     }
     case _ => throw new Exception("not supported decl")
@@ -68,47 +67,59 @@ object Desugar {
 
   // # Term # region_start
 
-  def withFuncAbs(s: FFuncSig): State[Context, Term => Term] = State { ctx =>
-    s.p match {
-      case Some(params) =>
-        // The implicit param is added to represent the function we abstract,
-        // in order to provide possibility for recursive call. Note that the
-        // abstraction is wrapped in a fix combinator.
-        val funParam = FParam(
-          FIdentifier(toRecAbsId(s.i.value)),
-          FFuncType(params.map(_.t), s.r)
-        )
-        val paramsWithFun = funParam :: params.toList
-        val c1 = paramsWithFun.foldLeft(ctx)((acc, p) =>
-          Context.addName(acc, p.i.value)
-        )
-        val abs = (e: Term) =>
-          paramsWithFun
-            .foldRight((c1, e)) { case (p, (c, acc)) =>
-              val ::(_, c2) = c
-              // NOTE: The return type specified by the function signature
-              // should be added to the last nested abstraction, since that one
-              // is returnig the value for the function.
-              val retType = c.length == c1.length match {
-                case true  => Some(toType(s.r).runA(ctx).value)
-                case false => None
-              }
-              val abs =
-                TermAbs(p.i.value, toType(p.t).runA(c2).value, acc, retType)
-              (c2, abs)
-            }
-            ._2
+  def withFuncAbs(
+      s: FFuncSig,
+      body: State[Context, Term]
+  ): State[Context, Term] = s.p match {
+    case Some(params) =>
+      // The implicit param is added to represent the function we abstract,
+      // in order to provide possibility for recursive call. Note that the
+      // abstraction is wrapped in a fix combinator.
+      val funParam = FParam(
+        FIdentifier(toRecAbsId(s.i.value)),
+        FFuncType(params.map(_.t), s.r)
+      )
+      val paramsWithFun = funParam :: params.toList
+      paramsWithFun.zipWithIndex
+        .foldRight(body) { case ((p, indx), acc) =>
+          for {
+            typ <- toType(p.t)
+            variable <- addNameToContext(p.i.value)
+            term <- acc
+            retType <- toType(s.r)
+            // NOTE: The return type specified by the function signature
+            // should be added to the last nested abstraction, since that one
+            // is returnig the value for the function.
+            retVal =
+              if (indx == paramsWithFun.length - 1) Some(retType) else None
+          } yield TermAbs(variable, typ, term, retVal)
+        }
         // NOTE: The abstraction is wrapped with a fix combinator to implement
         // recursion.
-        (c1, e => TermFix(abs(e)))
-      case None =>
-        val retType = toType(s.r).runA(ctx).value
-        (ctx, e => TermAbs("_", TypeUnit, e, Some(retType)))
-    }
+        .map(TermFix(_))
+    case None =>
+      for {
+        typ <- toType(s.r)
+        term <- body
+      } yield TermAbs("_", TypeUnit, term, Some(typ))
   }
 
-  def toTermExpr(e: List[FExpr]): State[Context, Term] =
-    e.traverse(toTerm(_)).map(_.last)
+  def toTermExpr(exprs: List[FExpr]): State[Context, Term] = exprs match {
+    case Nil => State.pure(TermUnit)
+    case l @ FLetExpr(i, _, e) :: lexprs =>
+      for {
+        lt <- withTermLet(i.value, e.toList)
+        le <- toTermExpr(lexprs)
+      } yield lt(le)
+    case h :: Nil => toTerm(h)
+    case _        => throw new Exception("invalid expr")
+  }
+
+  def withTermLet(i: String, expr: List[FExpr]): State[Context, Term => Term] =
+    for {
+      t1 <- toTermExpr(expr)
+      v <- addNameToContext(i)
+    } yield t2 => TermLet(v, t1, t2): Term
 
   def toTerm(e: FExpr): State[Context, Term] =
     e match {
@@ -123,6 +134,8 @@ object Desugar {
             c.p.toList.traverse(toMatchCase(_, exprList))
           })
         } yield TermMatch(me, mc.flatten)
+      case FAbs(bindings, expr) =>
+        withClosure(bindings.toList, toTermExpr(expr.toList))
       case FMultiplication(i1, i2) =>
         toTermOperator("&multiply", i1, i2)
       // TODO: Add other operators.
@@ -131,12 +144,10 @@ object Desugar {
       case FSubtraction(i1, i2) =>
         toTermOperator("&sub", i1, i2)
       case FVar(i) =>
-        State { ctx =>
-          toTermVar(i, ctx) match {
-            case Some(v) => (ctx, v)
-            case None    => throw new Exception("Var not found")
-          }
-        }
+        toTermVar(i).map(_ match {
+          case Some(v) => v
+          case None    => throw new Exception("Var not found")
+        })
       case FBool(true)  => State.pure(TermTrue)
       case FBool(false) => State.pure(TermFalse)
       case FInt(i)      => State.pure(TermInt(i))
@@ -145,17 +156,29 @@ object Desugar {
       case _            => throw new Exception("not supported expr")
     }
 
+  def withClosure(
+      params: List[FBinding],
+      body: State[Context, Term]
+  ): State[Context, Term] =
+    params.foldRight(body) { case (FBinding(i, Some(t)), acc) =>
+      for {
+        typ <- toType(t)
+        v <- addNameToContext(i.value)
+        term <- acc
+      } yield TermClosure(v, Some(typ), term)
+    }
+
   def toTermOperator(
       func: String,
       e1: FExpr,
       e2: FExpr
-  ): State[Context, Term] = State { ctx =>
+  ): State[Context, Term] = for {
     // TODO: Handle the case when the func isn't found in the context.
-    val funcVar = toTermVar(func, ctx).get
-    val (c1, t1) = toTerm(e1).run(ctx).value
-    val (c2, t2) = toTerm(e2).run(ctx).value
-    (c2, TermApp(TermApp(funcVar, t1), t2))
-  }
+    funcVar <- toTermVar(func)
+    t1 <- toTerm(e1)
+    t2 <- toTerm(e2)
+
+  } yield TermApp(TermApp(funcVar.get, t1), t2)
 
   def toMatchCase(
       p: FPattern,
@@ -187,12 +210,14 @@ object Desugar {
     case _                => throw new Exception("not supported case")
   }
 
-  def toTermVar(i: String, ctx: Context): Option[TermVar] =
-    Context
-      .nameToIndex(ctx, i)
-      .orElse(Context.nameToIndex(ctx, toRecAbsId(i))) match {
-      case Some(indx) => Some(TermVar(indx, ctx.length))
-      case None       => None
+  def toTermVar(i: String): State[Context, Option[Term]] =
+    State { ctx =>
+      Context
+        .nameToIndex(ctx, i)
+        .orElse(Context.nameToIndex(ctx, toRecAbsId(i))) match {
+        case Some(indx) => (ctx, Some(TermVar(indx, ctx.length)))
+        case None       => (ctx, None)
+      }
     }
 
   def toRecAbsId(i: String): String = s"^$i"
@@ -201,60 +226,51 @@ object Desugar {
 
   // # Type # region_start
 
-  def toTypeVariant(v: Seq[FVariantTypeValue]): State[Context, TypeVariant] =
-    State { ctx =>
-      val t = TypeVariant(
-        v.foldRight(List[(String, Type)]())((field, acc) => {
-          field match {
-            case FVariantTypeValue(FIdentifier(ti), None) =>
-              (ti, TypeUnit) :: acc
-            case FVariantTypeValue(FIdentifier(ti), Some(Right(ts))) =>
-              (ti, toTupleTypeRecord(ts).runA(ctx).value) :: acc
-            case FVariantTypeValue(FIdentifier(ti), Some(Left(p))) =>
-              (ti, toTypeRecord(p).runA(ctx).value) :: acc
-          }
-        })
+  def toTypeVariant(v: Seq[FVariantTypeValue]): State[Context, Type] =
+    v.toList
+      .traverse(_ match {
+        case FVariantTypeValue(FIdentifier(ti), None) =>
+          State.pure[Context, (String, Type)]((ti, TypeUnit))
+        case FVariantTypeValue(FIdentifier(ti), Some(Right(ts))) =>
+          toTupleTypeRecord(ts).map((ti, _))
+        case FVariantTypeValue(FIdentifier(ti), Some(Left(p))) =>
+          toTypeRecord(p).map((ti, _))
+      })
+      .map(TypeVariant(_))
+
+  def toTypeRecord(p: FParams): State[Context, Type] =
+    p.toList.traverse(v => toType(v.t).map((v.i.value, _))).map(TypeRecord(_))
+
+  def toTupleTypeRecord(ts: FTypes): State[Context, Type] =
+    ts.toList.zipWithIndex
+      .traverse(v => toType(v._1).map(((v._2 + 1).toString, _)))
+      .map(TypeRecord(_))
+
+  def withTypeAbs(
+      tp: FTypeParamClause,
+      typ: State[Context, Type]
+  ): State[Context, Type] = tp match {
+    case Some(params) =>
+      params.foldRight(typ)((p, acc) =>
+        for {
+          v <- addNameToContext(p.i.value)
+          t <- acc
+        } yield TypeAbs(v, t)
       )
-      (ctx, t)
-    }
-
-  def toTypeRecord(p: FParams): State[Context, TypeRecord] = State { ctx =>
-    val t = TypeRecord(p.foldRight(List[(String, Type)]())((v, acc) => {
-      (v.i.value, toType(v.t).runA(ctx).value) :: acc
-    }))
-    (ctx, t)
+    case None => typ
   }
 
-  def toTupleTypeRecord(ts: FTypes): State[Context, TypeRecord] = State { ctx =>
-    val t =
-      TypeRecord(ts.zipWithIndex.foldRight(List[(String, Type)]())((v, acc) => {
-        ((v._2 + 1).toString, toType(v._1).runA(ctx).value) :: acc
-      }))
-    (ctx, t)
-  }
-
-  def withTypeAbs(typ: FTypeParamClause): State[Context, (Kind, Type => Type)] =
-    State { ctx =>
-      typ match {
-        case Some(p) => {
-          val ids = p.map(_.i.value).toList
-          // First add all the type variables in the context.
-          val c1 = ids.foldLeft(ctx)((acc, n) => Context.addName(acc, n))
-          // Calculate the kind of the recursive type by counting the number of
-          // its type parameters. Kind arrow should be right associative.
-          val knd = List
-            .fill(ids.length + 1)(KindStar: Kind)
-            .reduceRight(KindArrow(_, _))
-          // Use the type to bulid type abstraction containg the type variables.
-          (c1, (knd, t => ids.foldRight(t)((i, acc) => TypeAbs(i, acc))))
-        }
-        case None => (ctx, (KindStar, identity))
-      }
-    }
-
-  def withRecType(i: String, k: Kind): State[Context, Type => TypeRec] = for {
+  def withRecType(
+      i: String,
+      tp: FTypeParamClause,
+      typ: State[Context, Type]
+  ): State[Context, Type] = for {
     ri <- addNameToContext(toRecId(i))
-  } yield t => TypeRec(ri, k, t)
+    knd = List
+      .fill(tp.map(_.length).getOrElse(0) + 1)(KindStar: Kind)
+      .reduceRight(KindArrow(_, _))
+    t <- typ
+  } yield TypeRec(ri, knd, t)
 
   // # Type # region_end
 
@@ -275,19 +291,19 @@ object Desugar {
     case FVariantTypeValue(FIdentifier(i), None) =>
       for {
         g <- withTermTypeAbs(tp)
-        f <- withFold(variantName, tp)
-        tag <- toTermTag(variantName, i, TermUnit)
-        b <- bindTermAbb(i, g(f(tag)))
+        tag = toTermTag(variantName, i, State.pure(TermUnit))
+        fold <- withFold(variantName, tp, tag)
+        b <- bindTermAbb(i, g(fold))
       } yield b
     case FVariantTypeValue(FIdentifier(i), Some(fields)) =>
       for {
         g <- withTermTypeAbs(tp)
         values = toRecordValues(fields)
-        abs <- withRecordAbs(values)
-        f <- withFold(variantName, tp)
-        r <- toTermRecord(values)
-        tag <- toTermTag(variantName, i, r)
-        b <- bindTermAbb(i, g(abs(f(tag))))
+        r = toTermRecord(values)
+        tag = toTermTag(variantName, i, r)
+        fold = withFold(variantName, tp, tag)
+        abs <- withRecordAbs(values, fold)
+        b <- bindTermAbb(i, g(abs))
       } yield b
   }
 
@@ -298,28 +314,27 @@ object Desugar {
   ): State[Context, Bind] = for {
     g <- withTermTypeAbs(tp)
     values = toRecordValues(fields)
-    abs <- withRecordAbs(values)
-    f <- withFold(recordName, tp)
-    r <- toTermRecord(values)
-    b <- bindTermAbb(toRecordConstructorId(recordName), g(abs(f(r))))
+    r = toTermRecord(values)
+    fold = withFold(recordName, tp, r)
+    abs <- withRecordAbs(values, fold)
+    b <- bindTermAbb(toRecordConstructorId(recordName), g(abs))
   } yield b
 
-  def toTermRecord(values: List[(String, FType)]): State[Context, TermRecord] =
-    State { ctx =>
-      val term = TermRecord(values.foldRight(List[(String, Term)]()) {
-        case ((n, t), acc) =>
-          (n, toTermVar(withTupleParamId(n), ctx).get) :: acc
-      })
-      (ctx, term)
-    }
+  def toTermRecord(values: List[(String, FType)]): State[Context, Term] =
+    values
+      .traverse { case (n, t) =>
+        toTermVar(withTupleParamId(n)).map(term => (n, term.get))
+      }
+      .map(TermRecord(_))
 
   def toTermTag(
       name: String,
       tag: String,
-      term: Term
-  ): State[Context, Term] = State { ctx =>
-    (ctx, TermTag(tag, term, toTypeVarOrId(ctx, toRecId(name))))
-  }
+      body: State[Context, Term]
+  ): State[Context, Term] = for {
+    term <- body
+    typ <- toTypeVarOrId(toRecId(name))
+  } yield TermTag(tag, term, typ)
 
   def toRecordValues(fields: Either[FParams, FTypes]) =
     fields match {
@@ -339,38 +354,38 @@ object Desugar {
     }
 
   def withRecordAbs(
-      values: List[(String, FType)]
-  ): State[Context, Term => Term] = {
-    State { ctx =>
-      val params = values.map { case (i, t) => (withTupleParamId(i), t) }
-      // Then add all the parameters as term variables in the context.
-      val c1 = params.traverse(p => addNameToContext(p._1)).runS(ctx).value
-      // Use the term to create term abstractions – equal to a function.
-      val termAbsFunc = (term: Term) =>
-        params
-          .foldRight((c1, term)) { case ((v, t), (c, acc)) =>
-            val ::(_, c2) = c
-            val abs = TermAbs(v, toType(t).runA(c2).value, acc)
-            (c2, abs)
-          }
-          ._2
-      (c1, termAbsFunc)
-    }
-  }
+      values: List[(String, FType)],
+      body: State[Context, Term]
+  ): State[Context, Term] =
+    values
+      .map { case (i, t) => (withTupleParamId(i), t) }
+      .foldRight(body)((p, acc) =>
+        for {
+          typ <- toType(p._2)
+          v <- addNameToContext(p._1)
+          term <- acc
+        } yield TermAbs(v, typ, term)
+      )
 
   def withFold(
       name: String,
-      tp: FTypeParamClause
-  ): State[Context, Term => TermApp] = State { ctx =>
-    tp match {
-      case None => (ctx, t => TermApp(TermFold(toTypeVarOrId(ctx, name)), t))
-      case Some(tys) =>
-        val t = toTypeVarOrId(ctx, name)
-        val typeApp = tys.foldLeft(t)((ta, tp) =>
-          TypeApp(ta, toTypeVarOrId(ctx, tp.i.value))
+      tp: FTypeParamClause,
+      body: State[Context, Term]
+  ): State[Context, Term] = tp match {
+    case None =>
+      for {
+        typ <- toTypeVarOrId(name)
+        term <- body
+      } yield TermApp(TermFold(typ), term)
+    case Some(tys) =>
+      tys
+        .foldLeft(toTypeVarOrId(name))((acc, tp) =>
+          for {
+            typ <- toTypeVarOrId(tp.i.value)
+            app <- acc
+          } yield TypeApp(app, typ)
         )
-        (ctx, t => TermApp(TermFold(typeApp), t))
-    }
+        .map2(body)((typ, term) => TermApp(TermFold(typ), term))
   }
 
   // Prepends the identifier with "#" if it's an integer – depicting it's used
@@ -386,36 +401,39 @@ object Desugar {
 
   // # Constructors # region_end
 
-  def toType(t: FType): State[Context, Type] = State { ctx =>
+  def toType(t: FType): State[Context, Type] =
     t match {
-      case FSimpleType(FIdentifier("i32"), None)  => (ctx, TypeInt)
-      case FSimpleType(FIdentifier("f32"), None)  => (ctx, TypeFloat)
-      case FSimpleType(FIdentifier("bool"), None) => (ctx, TypeBool)
-      case FSimpleType(FIdentifier("str"), None)  => (ctx, TypeString)
-      case FSimpleType(FIdentifier(i), None)      => (ctx, toTypeVarOrId(ctx, i))
+      case FSimpleType(FIdentifier("i32"), None)  => State.pure(TypeInt)
+      case FSimpleType(FIdentifier("f32"), None)  => State.pure(TypeFloat)
+      case FSimpleType(FIdentifier("bool"), None) => State.pure(TypeBool)
+      case FSimpleType(FIdentifier("str"), None)  => State.pure(TypeString)
+      case FSimpleType(FIdentifier(i), None)      => toTypeVarOrId(i)
       case FSimpleType(FIdentifier(i), Some(tys)) =>
-        val t = toTypeVarOrId(ctx, i)
-        // Type application should be left associative.
-        val app =
-          tys.foldLeft(t)((ta, tp) => TypeApp(ta, toType(tp).runA(ctx).value))
-        (ctx, app)
+        tys.foldLeft(toTypeVarOrId(i))((acc, typ) =>
+          for {
+            t <- toType(typ)
+            app <- acc
+          } yield TypeApp(app, t)
+        )
       case FFuncType(ts, t1) =>
-        val i = ts.map(toType(_).runA(ctx).value).toList
-        val o = toType(t1).runA(ctx).value
-        val t = i match {
-          case Nil => TypeArrow(TypeUnit, o)
-          // Type abstractions (arrow) should be right associative.
-          case _ => (i :+ o).reduceRight(TypeArrow(_, _))
-        }
-        (ctx, t)
+        for {
+          i <- ts.toList.traverse(toType(_))
+          o <- toType(t1)
+          t = i match {
+            case Nil => TypeArrow(TypeUnit, o)
+            // Type abstractions (arrow) should be right associative.
+            case _ => (i :+ o).reduceRight(TypeArrow(_, _))
+          }
+        } yield t
       case _ => throw new Exception("not supported type")
     }
-  }
 
-  def toTypeVarOrId(ctx: Context, i: String): Type =
-    toCtxIndex(ctx, i) match {
-      case Some(index) => TypeVar(index, ctx.length)
-      case None        => TypeId(i)
+  def toTypeVarOrId(i: String): State[Context, Type] =
+    State { ctx =>
+      toCtxIndex(ctx, i) match {
+        case Some(index) => (ctx, TypeVar(index, ctx.length))
+        case None        => (ctx, TypeId(i))
+      }
     }
 
   def toCtxIndex(ctx: Context, i: String): Option[Int] =

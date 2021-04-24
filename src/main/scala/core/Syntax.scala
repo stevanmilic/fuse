@@ -27,6 +27,7 @@ sealed trait Term
 case class TermFix(t: Term) extends Term
 case class TermAbs(i: String, t: Type, e: Term, r: Option[Type] = None)
     extends Term
+case class TermClosure(i: String, t: Option[Type], e: Term) extends Term
 // Expressions
 case class TermVar(i1: Integer, i2: Integer) extends Term
 case class TermApp(f: Term, v: Term) extends Term
