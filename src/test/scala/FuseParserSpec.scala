@@ -6,6 +6,9 @@ import org.parboiled2._
 
 object FuseParserSpec extends TestSuite {
   import FuseParser._
+  import FuseLexicalParser._
+  import FuseTypesParser._
+  import FuseExpressionParser._
 
   val tests = Tests {
     test("parse primitive type") {
@@ -26,16 +29,20 @@ object FuseParserSpec extends TestSuite {
         FIdentifier("Point"),
         None,
         Seq(
-          FStructTypeField(FParam(FIdentifier("x"), FType(FIdentifier("i32")))),
-          FStructTypeField(FParam(FIdentifier("y"), FType(FIdentifier("i32"))))
+          FStructTypeField(
+            FParam(FIdentifier("x"), FSimpleType(FIdentifier("i32")))
+          ),
+          FStructTypeField(
+            FParam(FIdentifier("y"), FSimpleType(FIdentifier("i32")))
+          )
         )
       )
     }
     test("parse tuple type") {
-      parse("type Pair(i32, str)") ==> FTupleType(
+      parse("type Pair(i32, str)") ==> FTupleTypeDef(
         FIdentifier("Pair"),
         None,
-        Seq(FType(FIdentifier("i32")), FType(FIdentifier("str")))
+        Seq(FSimpleType(FIdentifier("i32")), FSimpleType(FIdentifier("str")))
       )
     }
     test("parse generic type") {
@@ -46,7 +53,7 @@ object FuseParserSpec extends TestSuite {
           FSumTypeValue(FIdentifier("None")),
           FSumTypeValue(
             FIdentifier("Some"),
-            Some(Right(Seq(FType(FIdentifier("T")))))
+            Some(Right(Seq(FSimpleType(FIdentifier("T")))))
           )
         )
       )
@@ -57,27 +64,30 @@ object FuseParserSpec extends TestSuite {
         Some(Seq(FTypeParam(FIdentifier("K")), FTypeParam(FIdentifier("V")))),
         Seq(
           FStructTypeField(
-            FParam(FIdentifier("key"), FType(FIdentifier("K")))
+            FParam(FIdentifier("key"), FSimpleType(FIdentifier("K")))
           ),
           FStructTypeField(
-            FParam(FIdentifier("value"), FType(FIdentifier("V")))
+            FParam(FIdentifier("value"), FSimpleType(FIdentifier("V")))
           )
         )
       )
     }
     test("parse nested type") {
-      parse("type Data[T](Option[Map[string, T]])") ==> FTupleType(
+      parse("type Data[T](Option[Map[string, T]])") ==> FTupleTypeDef(
         FIdentifier("Data"),
         Some(Seq(FTypeParam(FIdentifier("T")))),
         Seq(
-          FType(
+          FSimpleType(
             FIdentifier("Option"),
             Some(
               Seq(
-                FType(
+                FSimpleType(
                   FIdentifier("Map"),
                   Some(
-                    Seq(FType(FIdentifier("string")), FType(FIdentifier("T")))
+                    Seq(
+                      FSimpleType(FIdentifier("string")),
+                      FSimpleType(FIdentifier("T"))
+                    )
                   )
                 )
               )
@@ -98,12 +108,12 @@ object FuseParserSpec extends TestSuite {
             Some(
               Left(
                 Seq(
-                  FParam(FIdentifier("head"), FType(FIdentifier("A"))),
+                  FParam(FIdentifier("head"), FSimpleType(FIdentifier("A"))),
                   FParam(
                     FIdentifier("t"),
-                    FType(
+                    FSimpleType(
                       FIdentifier("List"),
-                      Some(Seq(FType(FIdentifier("A"))))
+                      Some(Seq(FSimpleType(FIdentifier("A"))))
                     )
                   )
                 )
@@ -114,6 +124,15 @@ object FuseParserSpec extends TestSuite {
         )
       )
     }
+    test("parse type alias") {
+      parse("type Ints = List[i32]") ==> FTypeAlias(
+        FIdentifier("Ints"),
+        FSimpleType(
+          FIdentifier("List"),
+          Some(Seq(FSimpleType(FIdentifier("i32"))))
+        )
+      )
+    }
     test("parse trait definition") {
       parse(
         "trait Shape:\n    def area() -> f32\n    def surface() -> f32"
@@ -121,19 +140,62 @@ object FuseParserSpec extends TestSuite {
         FIdentifier("Shape"),
         None,
         Seq(
-          FFuncSig(
-            false,
-            FIdentifier("area"),
-            None,
-            None,
-            FType(FIdentifier("f32"), None)
+          Right(
+            FFuncSig(
+              false,
+              FIdentifier("area"),
+              None,
+              None,
+              FSimpleType(FIdentifier("f32"), None)
+            )
           ),
-          FFuncSig(
-            false,
-            FIdentifier("surface"),
-            None,
-            None,
-            FType(FIdentifier("f32"), None)
+          Right(
+            FFuncSig(
+              false,
+              FIdentifier("surface"),
+              None,
+              None,
+              FSimpleType(FIdentifier("f32"), None)
+            )
+          )
+        )
+      )
+    }
+    test("parse trait defination with function definition") {
+      parse(
+        "trait Shape:\n def area() -> f32\n def double_area() -> f32:\n  this.area*2"
+      ) ==> FTrait(
+        FIdentifier("Shape"),
+        None,
+        Seq(
+          Right(
+            FFuncSig(
+              false,
+              FIdentifier("area"),
+              None,
+              None,
+              FSimpleType(FIdentifier("f32"), None)
+            )
+          ),
+          Left(
+            FFuncDef(
+              FFuncSig(
+                false,
+                FIdentifier("double_area"),
+                None,
+                None,
+                FSimpleType(FIdentifier("f32"), None)
+              ),
+              Seq(
+                FMultiplication(
+                  FMemberExpr(
+                    FExprIdentifier("this"),
+                    Seq(FExprIdentifier("area"))
+                  ),
+                  FMemberExpr(FInt(2))
+                )
+              )
+            )
           )
         )
       )
@@ -145,24 +207,29 @@ object FuseParserSpec extends TestSuite {
         FIdentifier("Add"),
         Some(
           Seq(
-            FTypeParam(FIdentifier("V"), Some(FType(FIdentifier("Self")))),
-            FTypeParam(FIdentifier("O"), Some(FType(FIdentifier("Self"))))
+            FTypeParam(
+              FIdentifier("V"),
+              Some(FSimpleType(FIdentifier("Self")))
+            ),
+            FTypeParam(FIdentifier("O"), Some(FSimpleType(FIdentifier("Self"))))
           )
         ),
         Seq(
-          FFuncSig(
-            false,
-            FIdentifier("add"),
-            None,
-            Some(
-              Seq(
-                FParam(
-                  FIdentifier("other"),
-                  FType(FIdentifier("V"), None)
+          Right(
+            FFuncSig(
+              false,
+              FIdentifier("add"),
+              None,
+              Some(
+                Seq(
+                  FParam(
+                    FIdentifier("other"),
+                    FSimpleType(FIdentifier("V"), None)
+                  )
                 )
-              )
-            ),
-            FType(FIdentifier("O"), None)
+              ),
+              FSimpleType(FIdentifier("O"), None)
+            )
           )
         )
       )
@@ -174,7 +241,7 @@ object FuseParserSpec extends TestSuite {
           FIdentifier("one_and_two"),
           None,
           None,
-          FType(FIdentifier("i32"), None)
+          FSimpleType(FIdentifier("i32"), None)
         ),
         Seq(FMultiplication(FMemberExpr(FInt(1)), FMemberExpr(FInt(2))))
       )
@@ -189,20 +256,20 @@ object FuseParserSpec extends TestSuite {
             Seq(
               FParam(
                 FIdentifier("x"),
-                FType(FIdentifier("i32"))
+                FSimpleType(FIdentifier("i32"))
               ),
               FParam(
                 FIdentifier("y"),
-                FType(FIdentifier("i32"))
+                FSimpleType(FIdentifier("i32"))
               )
             )
           ),
-          FType(FIdentifier("i32"), None)
+          FSimpleType(FIdentifier("i32"), None)
         ),
         Seq(
           FAddition(
-            FMemberExpr(FExprIdentifier(FIdentifier("x"))),
-            FMemberExpr(FExprIdentifier(FIdentifier("y")))
+            FMemberExpr(FExprIdentifier("x")),
+            FMemberExpr(FExprIdentifier("y"))
           )
         )
       )
@@ -216,12 +283,12 @@ object FuseParserSpec extends TestSuite {
           FIdentifier("sum_three_and_two"),
           None,
           None,
-          FType(FIdentifier("i32"), None)
+          FSimpleType(FIdentifier("i32"), None)
         ),
         Seq(
           FCallExpr(
             FMemberExpr(
-              FExprIdentifier(FIdentifier("sum"))
+              FExprIdentifier("sum")
             ),
             Some(Seq(FMemberExpr(FInt(3)), FMemberExpr(FInt(2))))
           )
@@ -240,21 +307,179 @@ object FuseParserSpec extends TestSuite {
             Seq(
               FParam(
                 FIdentifier("l"),
-                FType(FIdentifier("List"), Some(Seq(FType(FIdentifier("i32")))))
+                FSimpleType(
+                  FIdentifier("List"),
+                  Some(Seq(FSimpleType(FIdentifier("i32"))))
+                )
               )
             )
           ),
-          FType(FIdentifier("i32"), None)
+          FSimpleType(FIdentifier("i32"), None)
         ),
         Seq(
           FCallExpr(
             FMemberExpr(
-              FExprIdentifier(FIdentifier("l")),
-              Seq(FIdentifier("fold_left"))
+              FExprIdentifier("l"),
+              Seq(FExprIdentifier("fold_left"))
             ),
             Some(Seq(FMemberExpr((FInt(0))))),
             Seq(
-              Left(Some(Seq(FMemberExpr(FExprIdentifier(FIdentifier("sum"))))))
+              Left(Some(Seq(FMemberExpr(FExprIdentifier("sum")))))
+            )
+          )
+        )
+      )
+    }
+    test("parse tail func definition with generics") {
+      parse(
+        "def map[A, B](l: List[A], f: A -> B) -> List[B]:\n let iter = (acc, l) => {\n  match l:\n   Nil => acc\n   Cons(h, t) => iter(Cons(f(h), acc), t)\n  }\n iter(List(), l)"
+      ) ==> FFuncDef(
+        FFuncSig(
+          false,
+          FIdentifier("map"),
+          Some(Seq(FTypeParam(FIdentifier("A")), FTypeParam(FIdentifier("B")))),
+          Some(
+            Seq(
+              FParam(
+                FIdentifier("l"),
+                FSimpleType(
+                  FIdentifier("List"),
+                  Some(Seq(FSimpleType(FIdentifier("A"))))
+                )
+              ),
+              FParam(
+                FIdentifier("f"),
+                FFuncType(
+                  FSimpleType(FIdentifier("A")),
+                  FSimpleType(FIdentifier("B"))
+                )
+              )
+            )
+          ),
+          FSimpleType(
+            FIdentifier("List"),
+            Some(Seq(FSimpleType(FIdentifier("B"))))
+          )
+        ),
+        Seq(
+          FLetExpr(
+            FIdentifier("iter"),
+            None,
+            Seq(
+              FLambdaExpr(
+                Seq(
+                  FLambdaBinding(FIdentifier("acc")),
+                  FLambdaBinding(FIdentifier("l"))
+                ),
+                Seq(
+                  FMatchExpr(
+                    FMemberExpr(FExprIdentifier("l")),
+                    Seq(
+                      FCase(
+                        Seq(FIdentifierPattern("Nil")),
+                        None,
+                        Seq(FMemberExpr(FExprIdentifier("acc")))
+                      ),
+                      FCase(
+                        Seq(
+                          FSumStructPattern(
+                            FIdentifier("Cons"),
+                            Seq(
+                              FIdentifierPattern("h"),
+                              FIdentifierPattern("t")
+                            )
+                          )
+                        ),
+                        None,
+                        Seq(
+                          FCallExpr(
+                            FMemberExpr(FExprIdentifier("iter")),
+                            Some(
+                              Seq(
+                                FCallExpr(
+                                  FMemberExpr(FExprIdentifier("Cons")),
+                                  Some(
+                                    Seq(
+                                      FCallExpr(
+                                        FMemberExpr(FExprIdentifier("f")),
+                                        Some(
+                                          Seq(FMemberExpr(FExprIdentifier("h")))
+                                        )
+                                      ),
+                                      FMemberExpr(FExprIdentifier("acc"))
+                                    )
+                                  )
+                                ),
+                                FMemberExpr(FExprIdentifier("t"))
+                              )
+                            )
+                          )
+                        )
+                      )
+                    )
+                  )
+                )
+              )
+            )
+          ),
+          FCallExpr(
+            FMemberExpr(FExprIdentifier("iter")),
+            Some(
+              Seq(
+                FCallExpr(
+                  FMemberExpr(FExprIdentifier("List")),
+                  None
+                ),
+                FMemberExpr(FExprIdentifier("l"))
+              )
+            )
+          )
+        )
+      )
+    }
+    test("parse type implemantion") {
+      parse(
+        "impl Point:\n def x_diff(other: Point) -> f32:\n  math.abs(this.x - other.x)"
+      ) ==> FTypeImpl(
+        FIdentifier("Point"),
+        None,
+        Seq(
+          FFuncDef(
+            FFuncSig(
+              false,
+              FIdentifier("x_diff"),
+              None,
+              Some(
+                Seq(
+                  FParam(
+                    FIdentifier("other"),
+                    FSimpleType(FIdentifier("Point"))
+                  )
+                )
+              ),
+              FSimpleType(FIdentifier("f32"))
+            ),
+            Seq(
+              FCallExpr(
+                FMemberExpr(
+                  FExprIdentifier("math"),
+                  Seq(FExprIdentifier("abs"))
+                ),
+                Some(
+                  Seq(
+                    FSubtraction(
+                      FMemberExpr(
+                        FExprIdentifier("this"),
+                        Seq(FExprIdentifier("x"))
+                      ),
+                      FMemberExpr(
+                        FExprIdentifier("other"),
+                        Seq(FExprIdentifier("x"))
+                      )
+                    )
+                  )
+                )
+              )
             )
           )
         )
@@ -275,18 +500,18 @@ object FuseParserSpec extends TestSuite {
               FIdentifier("area"),
               None,
               None,
-              FType(FIdentifier("f32"), None)
+              FSimpleType(FIdentifier("f32"), None)
             ),
             Seq(
               FMultiplication(
                 FMultiplication(
                   FMemberExpr(
-                    FExprIdentifier(FIdentifier("this")),
-                    Seq(FIdentifier("radius"))
+                    FExprIdentifier("this"),
+                    Seq(FExprIdentifier("radius"))
                   ),
                   FMemberExpr(
-                    FExprIdentifier(FIdentifier("this")),
-                    Seq(FIdentifier("radius"))
+                    FExprIdentifier("this"),
+                    Seq(FExprIdentifier("radius"))
                   )
                 ),
                 FMemberExpr(FFloat(3.14.toFloat))
