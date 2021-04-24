@@ -24,7 +24,8 @@ case object TypeInt extends Type
 sealed trait Term
 
 // Abstraction
-case class TermAbs(i: String, t: Type, e: Term, r: Option[Type]) extends Term
+case class TermAbs(i: String, t: Type, e: Term, r: Option[Type] = None)
+    extends Term
 // Expressions
 case class TermVar(i1: Integer, i2: Integer) extends Term
 case class TermApp(f: Term, v: Term) extends Term
@@ -32,14 +33,14 @@ case class TermCase(i: String, v: String, e: Term)
 case class TermMatch(t: Term, c: List[TermCase]) extends Term
 case class TermLet(i: String, t1: Term, t2: Term) extends Term
 case class TermProj(t: Term, i: String) extends Term
-//Data – these should be generated during type checking, when data constructors
-//are encountered.
+// ADT
 case class TermRecord(v: List[(String, Term)]) extends Term
 case class TermTag(i: String, t: Term, typ: Type) extends Term
 case class TermAscribe(t: Term, typ: Type) extends Term
-// Recursion
-case class TermFold(t: Term) extends Term
-case class TermUnfold(t: Term) extends Term
+case class TermFold(t: Type) extends Term
+case class TermUnfold(t: Type) extends Term
+case class TermTAbs(i: String, t: Term) extends Term
+case class TermTApp(t: Term, typ: Type) extends Term
 // Literals
 case class TermFloat(f: Float) extends Term
 case class TermInt(i: Int) extends Term
