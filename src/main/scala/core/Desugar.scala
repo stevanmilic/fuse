@@ -55,13 +55,11 @@ object Desugar {
     case _ => throw new Exception("not supported decl")
   }
 
-  def bindTypeAbb(i: String, t: Type): State[Context, Bind] = for {
-    _ <- addNameToContext(i)
-  } yield Bind(i, TypeAbbBind(t))
+  def bindTypeAbb(i: String, t: Type): State[Context, Bind] =
+    addNameToContext(i).map(Bind(_, TypeAbbBind(t)))
 
-  def bindTermAbb(i: String, t: Term): State[Context, Bind] = for {
-    _ <- addNameToContext(i)
-  } yield Bind(i, TermAbbBind(t))
+  def bindTermAbb(i: String, t: Term): State[Context, Bind] =
+    addNameToContext(i).map(Bind(_, TermAbbBind(t)))
 
   // # Bind # region_end
 
@@ -443,6 +441,9 @@ object Desugar {
 
   def addNameToContext(n: String): State[Context, String] =
     State(ctx => (Context.addName(ctx, n), n))
+
+  def addBindingToContext(n: String, b: Binding): State[Context, String] =
+    State(ctx => (Context.addBinding(ctx, n, b), n))
 
   def toRecId(i: String) = s"@$i"
 

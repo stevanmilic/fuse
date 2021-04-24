@@ -40,6 +40,7 @@ case class TermTag(i: String, t: Term, typ: Type) extends Term
 case class TermAscribe(t: Term, typ: Type) extends Term
 case class TermFold(t: Type) extends Term
 case class TermUnfold(t: Type) extends Term
+// Higher Kind
 case class TermTAbs(i: String, t: Term) extends Term
 case class TermTApp(t: Term, typ: Type) extends Term
 
@@ -61,7 +62,7 @@ sealed trait Binding
 case object NameBind extends Binding
 case class TypeVarBind(k: Kind) extends Binding
 case class VarBind(t: Type) extends Binding
-case class TypeAbbBind(t: Type) extends Binding
+case class TypeAbbBind(t: Type, k: Option[Kind] = None) extends Binding
 case class TermAbbBind(t: Term) extends Binding
 
 // Global bindings.

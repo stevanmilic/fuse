@@ -29,4 +29,20 @@ object Context {
       case _           => None
     }
 
+  def getTypeFromContext(c: Context, idx: Int): Either[String, Type] =
+    getBinding(c, idx) match {
+      case Right(VarBind(t)) => Right(t)
+      case Right(_) =>
+        Left(
+          s"getTypeFromContext: Wrong kind of binding for variable ${indexToName(c, idx)}"
+        )
+      case Left(e) => Left(e)
+    }
+
+  def getBinding(c: Context, idx: Int): Either[String, Binding] =
+    c.lift(idx) match {
+      case Some((_, b)) => Right(b)
+      case _            => Left(s"Variable not found: offset $idx, ctx size ${c.length}")
+    }
+
 }
