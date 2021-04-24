@@ -44,11 +44,11 @@ object FuseExpressionParser {
       extends FInfixExpr
 
   case class FExprIdentifier(value: String) extends FInfixExpr
-  case class FMemberExpr(e: FInfixExpr, ids: Seq[FExprIdentifier] = Seq())
+  case class FMemberExpr(e: FInfixExpr, ids: Seq[FExprIdentifier])
       extends FInfixExpr
-  type FArguments = Option[Seq[FInfixExpr]]
+  type FArguments = Option[Seq[FExpr]]
   case class FCallExpr(
-      ids: FMemberExpr,
+      ids: FExpr,
       args: FArguments,
       a: Seq[Either[FArguments, Seq[FExprIdentifier]]] = Seq()
   ) extends FInfixExpr
@@ -128,24 +128,20 @@ class FuseExpressionParser(val input: ParserInput) extends FuseTypesParser {
     def DotAccessor = rule { '.' ~ ExprId }
 
     def CallExpr = {
-      def ArgumentList = rule { InfixExpr ~ ("," ~ InfixExpr).* ~> (_ +: _) }
-      def Arguments = {
-        rule { "(" ~ ArgumentList.? ~ ")" }
-      }
+      def ArgumentExpr = rule { LambdaExpr | InfixExpr }
+      def ArgumentList = rule { ArgumentExpr.+(",") }
+      def Arguments = { rule { "(" ~ ArgumentList.? ~ ")" } }
       def CallExprAccessors = rule {
         Arguments ~> (Left(_)) | DotAccessor.+ ~> (Right(_))
       }
       rule {
-        MemberExpr ~ Arguments ~ CallExprAccessors.* ~> FCallExpr
+        (MemberExpr | PrimaryExpr) ~ Arguments ~ CallExprAccessors.* ~> FCallExpr
       }
     }
 
-    // TODO: Use the result of the primary expression as the value, instead of
-    // embedding the identifiers and literals into to the member expression.
-    // To escape things like FMemberExpr(FInt(2))!
-    def MemberExpr = rule { PrimaryExpr ~ DotAccessor.* ~> FMemberExpr }
+    def MemberExpr = rule { PrimaryExpr ~ DotAccessor.+ ~> FMemberExpr }
 
-    def UnaryExpr = rule { CallExpr | MemberExpr }
+    def UnaryExpr = rule { CallExpr | MemberExpr | PrimaryExpr }
 
     def MultiplicativeExpr = rule {
       UnaryExpr ~ (wspStr("*") ~ UnaryExpr ~> FMultiplication |
