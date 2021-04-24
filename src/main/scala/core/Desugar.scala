@@ -3,18 +3,18 @@ package core
 import cats.data.State
 import cats.implicits._
 import core.Context._
+import parser.FuseExpressionParser._
 import parser.FuseLexicalParser._
 import parser.FuseParser._
 import parser.FuseTypesParser._
-import parser.FuseExpressionParser._
 
 object Desugar {
-  def process(decls: List[FDecl]): State[Context, List[Bind]] =
+  def process(decls: List[FDecl]): ContextState[List[Bind]] =
     decls.traverse(bind(_)).map(_.flatten)
 
   // # Bind # region_start
 
-  def bind(d: FDecl): State[Context, List[Bind]] = d match {
+  def bind(d: FDecl): ContextState[List[Bind]] = d match {
     case FVariantTypeDecl(FIdentifier(i), typ, values) =>
       val variant = toTypeVariant(values)
       val rec = withRecType(i, typ, variant)
@@ -55,11 +55,11 @@ object Desugar {
     case _ => throw new Exception("not supported decl")
   }
 
-  def bindTypeAbb(i: String, t: Type): State[Context, Bind] =
-    addNameToContext(i).map(Bind(_, TypeAbbBind(t)))
+  def bindTypeAbb(i: String, t: Type): ContextState[Bind] =
+    Context.addName(i).map(Bind(_, TypeAbbBind(t)))
 
-  def bindTermAbb(i: String, t: Term): State[Context, Bind] =
-    addNameToContext(i).map(Bind(_, TermAbbBind(t)))
+  def bindTermAbb(i: String, t: Term): ContextState[Bind] =
+    Context.addName(i).map(Bind(_, TermAbbBind(t)))
 
   // # Bind # region_end
 
@@ -67,8 +67,8 @@ object Desugar {
 
   def withFuncAbs(
       s: FFuncSig,
-      body: State[Context, Term]
-  ): State[Context, Term] = s.p match {
+      body: ContextState[Term]
+  ): ContextState[Term] = s.p match {
     case Some(params) =>
       // The implicit param is added to represent the function we abstract,
       // in order to provide possibility for recursive call. Note that the
@@ -82,7 +82,7 @@ object Desugar {
         .foldRight(body) { case ((p, indx), acc) =>
           for {
             typ <- toType(p.t)
-            variable <- addNameToContext(p.i.value)
+            variable <- Context.addName(p.i.value)
             term <- acc
             retType <- toType(s.r)
             // NOTE: The return type specified by the function signature
@@ -99,10 +99,10 @@ object Desugar {
       for {
         typ <- toType(s.r)
         term <- body
-      } yield TermAbs("_", TypeUnit, term, Some(typ))
+      } yield TermAbs(WildcardName, TypeUnit, term, Some(typ))
   }
 
-  def toTermExpr(exprs: List[FExpr]): State[Context, Term] = exprs match {
+  def toTermExpr(exprs: List[FExpr]): ContextState[Term] = exprs match {
     case Nil => State.pure(TermUnit)
     case l @ FLetExpr(i, _, e) :: lexprs =>
       for {
@@ -113,13 +113,13 @@ object Desugar {
     case _        => throw new Exception("invalid expr")
   }
 
-  def withTermLet(i: String, expr: List[FExpr]): State[Context, Term => Term] =
+  def withTermLet(i: String, expr: List[FExpr]): ContextState[Term => Term] =
     for {
       t1 <- toTermExpr(expr)
-      v <- addNameToContext(i)
+      v <- Context.addName(i)
     } yield t2 => TermLet(v, t1, t2): Term
 
-  def toTerm(e: FExpr): State[Context, Term] =
+  def toTerm(e: FExpr): ContextState[Term] =
     e match {
       case FApp(e, args) =>
         val v = e :: args.toList.flatten.flatten
@@ -156,12 +156,12 @@ object Desugar {
 
   def withClosure(
       params: List[FBinding],
-      body: State[Context, Term]
-  ): State[Context, Term] =
+      body: ContextState[Term]
+  ): ContextState[Term] =
     params.foldRight(body) { case (FBinding(i, Some(t)), acc) =>
       for {
         typ <- toType(t)
-        v <- addNameToContext(i.value)
+        v <- Context.addName(i.value)
         term <- acc
       } yield TermClosure(v, Some(typ), term)
     }
@@ -170,7 +170,7 @@ object Desugar {
       func: String,
       e1: FExpr,
       e2: FExpr
-  ): State[Context, Term] = for {
+  ): ContextState[Term] = for {
     funcVar <- toTermVar(func).map(_ match {
       case Some(v) => v
       case None    => throw new Exception(s"operator $func not found")
@@ -183,20 +183,20 @@ object Desugar {
   def toMatchCase(
       p: FPattern,
       e: List[FExpr]
-  ): State[Context, (Pattern, Term)] = for {
+  ): ContextState[(Pattern, Term)] = for {
     p <- toPattern(p)
     ce <- toTermExpr(e)
   } yield (p, ce)
 
-  def toPattern(p: FPattern): State[Context, Pattern] = p match {
+  def toPattern(p: FPattern): ContextState[Pattern] = p match {
     case FIdentifierPattern(v, _) => State.pure(PatternNode(v))
     case FVariantOrRecordPattern(t, ps) =>
       for {
         np <- ps.toList.traverse(toPattern(_))
         vars <- np.traverse(i =>
           i match {
-            case PatternNode(v, List()) => addNameToContext(v)
-            case PatternDefault         => State.pure[Context, String]("_")
+            case PatternNode(v, List()) => Context.addName(v)
+            case PatternDefault         => State.pure[Context, String](WildcardName)
             case _                      => throw new Exception("not supported nested pattern")
           }
         )
@@ -210,7 +210,7 @@ object Desugar {
     case _                => throw new Exception("not supported case")
   }
 
-  def toTermVar(i: String): State[Context, Option[Term]] =
+  def toTermVar(i: String): ContextState[Option[Term]] =
     State { ctx =>
       Context
         .nameToIndex(ctx, i)
@@ -226,7 +226,7 @@ object Desugar {
 
   // # Type # region_start
 
-  def toTypeVariant(v: Seq[FVariantTypeValue]): State[Context, Type] =
+  def toTypeVariant(v: Seq[FVariantTypeValue]): ContextState[Type] =
     v.toList
       .traverse(_ match {
         case FVariantTypeValue(FIdentifier(ti), None) =>
@@ -238,22 +238,22 @@ object Desugar {
       })
       .map(TypeVariant(_))
 
-  def toTypeRecord(p: FParams): State[Context, Type] =
+  def toTypeRecord(p: FParams): ContextState[Type] =
     p.toList.traverse(v => toType(v.t).map((v.i.value, _))).map(TypeRecord(_))
 
-  def toTupleTypeRecord(ts: FTypes): State[Context, Type] =
+  def toTupleTypeRecord(ts: FTypes): ContextState[Type] =
     ts.toList.zipWithIndex
       .traverse(v => toType(v._1).map(((v._2 + 1).toString, _)))
       .map(TypeRecord(_))
 
   def withTypeAbs(
       tp: FTypeParamClause,
-      typ: State[Context, Type]
-  ): State[Context, Type] = tp match {
+      typ: ContextState[Type]
+  ): ContextState[Type] = tp match {
     case Some(params) =>
       params.foldRight(typ)((p, acc) =>
         for {
-          v <- addNameToContext(p.i.value)
+          v <- Context.addName(p.i.value)
           t <- acc
         } yield TypeAbs(v, t)
       )
@@ -263,9 +263,9 @@ object Desugar {
   def withRecType(
       i: String,
       tp: FTypeParamClause,
-      typ: State[Context, Type]
-  ): State[Context, Type] = for {
-    ri <- addNameToContext(toRecId(i))
+      typ: ContextState[Type]
+  ): ContextState[Type] = for {
+    ri <- Context.addName(toRecId(i))
     knd = List
       .fill(tp.map(_.length).getOrElse(0) + 1)(KindStar: Kind)
       .reduceRight(KindArrow(_, _))
@@ -280,14 +280,14 @@ object Desugar {
       name: String,
       tp: FTypeParamClause,
       t: List[FVariantTypeValue]
-  ): State[Context, List[Bind]] =
+  ): ContextState[List[Bind]] =
     t.traverse(buildVariantConstructor(name, tp, _))
 
   def buildVariantConstructor(
       variantName: String,
       tp: FTypeParamClause,
       v: FVariantTypeValue
-  ): State[Context, Bind] = v match {
+  ): ContextState[Bind] = v match {
     case FVariantTypeValue(FIdentifier(i), None) =>
       for {
         g <- withTermTypeAbs(tp)
@@ -311,7 +311,7 @@ object Desugar {
       recordName: String,
       tp: FTypeParamClause,
       fields: Either[FParams, FTypes]
-  ): State[Context, Bind] = for {
+  ): ContextState[Bind] = for {
     g <- withTermTypeAbs(tp)
     values = toRecordValues(fields)
     r = toTermRecord(values)
@@ -320,7 +320,7 @@ object Desugar {
     b <- bindTermAbb(toRecordConstructorId(recordName), g(abs))
   } yield b
 
-  def toTermRecord(values: List[(String, FType)]): State[Context, Term] =
+  def toTermRecord(values: List[(String, FType)]): ContextState[Term] =
     values
       .traverse { case (n, t) =>
         toTermVar(withTupleParamId(n)).map(term => (n, term.get))
@@ -330,8 +330,8 @@ object Desugar {
   def toTermTag(
       name: String,
       tag: String,
-      body: State[Context, Term]
-  ): State[Context, Term] = for {
+      body: ContextState[Term]
+  ): ContextState[Term] = for {
     term <- body
     typ <- toTypeVarOrId(toRecId(name))
   } yield TermTag(tag, term, typ)
@@ -343,26 +343,26 @@ object Desugar {
         types.toList.zipWithIndex.map(v => ((v._2 + 1).toString, v._1))
     }
 
-  def withTermTypeAbs(typ: FTypeParamClause): State[Context, Term => Term] =
+  def withTermTypeAbs(typ: FTypeParamClause): ContextState[Term => Term] =
     typ match {
       case Some(p) =>
         val ids = p.map(_.i.value).toList
         for {
-          _ <- ids.traverse(addNameToContext(_))
+          _ <- ids.traverse(Context.addName(_))
         } yield t => ids.foldRight(t)((i, acc) => TermTAbs(i, acc))
       case None => State.pure(identity)
     }
 
   def withRecordAbs(
       values: List[(String, FType)],
-      body: State[Context, Term]
-  ): State[Context, Term] =
+      body: ContextState[Term]
+  ): ContextState[Term] =
     values
       .map { case (i, t) => (withTupleParamId(i), t) }
       .foldRight(body)((p, acc) =>
         for {
           typ <- toType(p._2)
-          v <- addNameToContext(p._1)
+          v <- Context.addName(p._1)
           term <- acc
         } yield TermAbs(v, typ, term)
       )
@@ -370,8 +370,8 @@ object Desugar {
   def withFold(
       name: String,
       tp: FTypeParamClause,
-      body: State[Context, Term]
-  ): State[Context, Term] = tp match {
+      body: ContextState[Term]
+  ): ContextState[Term] = tp match {
     case None =>
       for {
         typ <- toTypeVarOrId(name)
@@ -401,7 +401,7 @@ object Desugar {
 
   // # Constructors # region_end
 
-  def toType(t: FType): State[Context, Type] =
+  def toType(t: FType): ContextState[Type] =
     t match {
       case FSimpleType(FIdentifier("i32"), None)  => State.pure(TypeInt)
       case FSimpleType(FIdentifier("f32"), None)  => State.pure(TypeFloat)
@@ -428,7 +428,7 @@ object Desugar {
       case _ => throw new Exception("not supported type")
     }
 
-  def toTypeVarOrId(i: String): State[Context, Type] =
+  def toTypeVarOrId(i: String): ContextState[Type] =
     State { ctx =>
       toCtxIndex(ctx, i) match {
         case Some(index) => (ctx, TypeVar(index, ctx.length))
@@ -438,12 +438,6 @@ object Desugar {
 
   def toCtxIndex(ctx: Context, i: String): Option[Int] =
     Context.nameToIndex(ctx, i).orElse(Context.nameToIndex(ctx, toRecId(i)))
-
-  def addNameToContext(n: String): State[Context, String] =
-    State(ctx => (Context.addName(ctx, n), n))
-
-  def addBindingToContext(n: String, b: Binding): State[Context, String] =
-    State(ctx => (Context.addBinding(ctx, n, b), n))
 
   def toRecId(i: String) = s"@$i"
 

@@ -42,6 +42,8 @@ case class TermFold(t: Type) extends Term
 // Higher Kind
 case class TermTAbs(i: String, t: Term) extends Term
 case class TermTApp(t: Term, typ: Type) extends Term
+// Built-in functions with pre-defined type
+case class TermBuiltin(typ: Type) extends Term
 
 sealed trait Pattern
 
@@ -62,7 +64,7 @@ case object NameBind extends Binding
 case class TypeVarBind(k: Kind) extends Binding
 case class VarBind(t: Type) extends Binding
 case class TypeAbbBind(t: Type, k: Option[Kind] = None) extends Binding
-case class TermAbbBind(t: Term) extends Binding
+case class TermAbbBind(t: Term, ty: Option[Type] = None) extends Binding
 
 // Global bindings.
 case class Bind(i: String, b: Binding)
