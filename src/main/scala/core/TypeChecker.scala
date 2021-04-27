@@ -235,15 +235,18 @@ object TypeChecker {
     p match {
       case t: Term        => typeOf(t).map(Some(_))
       case PatternDefault => EitherT.pure(None)
-      case PatternNode(tag, vars) =>
+      case PatternNode(node, vars) =>
         expr match {
           case TypeVariant(fields) =>
             for {
-              _ <- fields
-                .find(_._1 == tag)
-                .map(_._2)
-                .toRight(Error.MatchPatternNotInVariant(tag))
-                .pure[StateEither]
+              ty <- EitherT.fromEither[ContextState](
+                fields
+                  .find(_._1 == node)
+                  .map(_._2)
+                  .toRight(Error.MatchPatternNotInVariant(node))
+              )
+              // TODO: Binding variant fields to variables is not correct, the
+              // type variables should be used instead.
               _ <- bindFieldsToVars(fields, vars)
             } yield Some(expr)
           case TypeRecord(fields) =>
@@ -251,8 +254,8 @@ object TypeChecker {
               idx <- EitherT(
                 State.inspect((ctx: Context) =>
                   Context
-                    .nameToIndex(ctx, tag)
-                    .toRight(Error.MatchPatternRecordNotFound(tag))
+                    .nameToIndex(ctx, node)
+                    .toRight(Error.MatchPatternRecordNotFound(node))
                 )
               )
               _ <- Context.getType(idx)
@@ -272,12 +275,13 @@ object TypeChecker {
         EitherT.right(
           fields.traverse(f => Context.addBinding(f._1, VarBind(f._2)))
         )
-      case false => EitherT.leftT(Error.MatchPatternWrongVariables)
+      case false =>
+        EitherT.leftT(Error.MatchPatternWrongVariables + fields + vars)
     }
 
   def unfoldType(tyS: Type): ContextState[Type] =
     simplifyType(tyS).map(_ match {
-      case TypeRec(_, _, tyT) => TypeArrow(tyS, typeSubstituteTop(tyS, tyT))
+      case TypeRec(_, _, tyT) => typeSubstituteTop(tyS, tyT)
       case ty                 => ty
     })
 

@@ -513,6 +513,191 @@ object TypeCheckerSpec extends TestSuite {
         )
       )
     }
+    test("type check function with variant data constructor") {
+      typeCheck(
+        List(
+          Bind(
+            "OptionInt",
+            TypeAbbBind(
+              TypeRec(
+                "@OptionInt",
+                KindStar,
+                TypeVariant(
+                  List(
+                    ("None", TypeUnit),
+                    ("Some", TypeRecord(List(("1", TypeInt))))
+                  )
+                )
+              )
+            )
+          ),
+          Bind(
+            "None",
+            TermAbbBind(
+              TermApp(
+                TermFold(TypeVar(0, 1)),
+                TermTag("None", TermUnit, TypeVar(0, 1))
+              )
+            )
+          ),
+          Bind(
+            "Some",
+            TermAbbBind(
+              TermAbs(
+                "#1",
+                TypeInt,
+                TermApp(
+                  TermFold(TypeVar(2, 3)),
+                  TermTag(
+                    "Some",
+                    TermRecord(List(("1", TermVar(0, 3)))),
+                    TypeVar(2, 3)
+                  )
+                )
+              )
+            )
+          ),
+          Bind(
+            "some_value",
+            TermAbbBind(
+              TermFix(
+                TermAbs(
+                  "^some_value",
+                  TypeArrow(TypeInt, TypeVar(2, 3)),
+                  TermAbs(
+                    "x",
+                    TypeInt,
+                    TermApp(TermVar(2, 5), TermVar(0, 5)),
+                    Some(TypeVar(4, 5))
+                  )
+                )
+              )
+            )
+          )
+        )
+      ) ==> Right(
+        List(
+          ("OptionInt", Left(KindStar)),
+          ("None", Right(TypeVar(0, 1))),
+          ("Some", Right(TypeArrow(TypeInt, TypeVar(1, 2)))),
+          ("some_value", Right(TypeArrow(TypeInt, TypeVar(2, 3))))
+        )
+      )
+    }
+    test("type check function with match expression with literals") {
+      typeCheck(
+        List(
+          Bind(
+            "zero_to_one",
+            TermAbbBind(
+              TermFix(
+                TermAbs(
+                  "^zero_to_one",
+                  TypeArrow(TypeInt, TypeInt),
+                  TermAbs(
+                    "x",
+                    TypeInt,
+                    TermMatch(
+                      TermVar(0, 2),
+                      List(
+                        (TermInt(0), TermInt(1)),
+                        (PatternDefault, TermVar(0, 2))
+                      )
+                    ),
+                    Some(TypeInt)
+                  )
+                )
+              )
+            )
+          )
+        )
+      ) ==> Right(List(("zero_to_one", Right(TypeArrow(TypeInt, TypeInt)))))
+    }
+    test("type check function with match expression with with adt unfolding") {
+      typeCheck(
+        List(
+          Bind(
+            "&add",
+            TermAbbBind(
+              TermBuiltin(TypeArrow(TypeInt, TypeArrow(TypeInt, TypeInt)))
+            )
+          ),
+          Bind(
+            "Option",
+            TypeAbbBind(
+              TypeAbs(
+                "T",
+                TypeRec(
+                  "@Option",
+                  KindArrow(KindStar, KindStar),
+                  TypeVariant(
+                    List(
+                      ("None", TypeUnit),
+                      ("Some", TypeRecord(List(("1", TypeVar(1, 2)))))
+                    )
+                  )
+                )
+              )
+            )
+          ),
+          Bind(
+            "Some",
+            TermAbbBind(
+              TermTAbs(
+                "T",
+                TermAbs(
+                  "#1",
+                  TypeVar(0, 2),
+                  TermApp(
+                    TermFold(TypeApp(TypeVar(2, 3), TypeVar(1, 3))),
+                    TermTag(
+                      "Some",
+                      TermRecord(List(("1", TermVar(0, 3)))),
+                      TypeApp(TypeVar(2, 3), TypeVar(1, 3))
+                    )
+                  )
+                )
+              )
+            )
+          ),
+          Bind(
+            "some_plus_one",
+            TermAbbBind(
+              TermTAbs(
+                "T",
+                TermFix(
+                  TermAbs(
+                    "^some_plus_one",
+                    TypeArrow(
+                      TypeApp(TypeVar(2, 4), TypeVar(0, 4)),
+                      TypeInt
+                    ),
+                    TermAbs(
+                      "x",
+                      TypeApp(TypeVar(3, 5), TypeVar(1, 5)),
+                      TermMatch(
+                        TermVar(0, 6),
+                        List(
+                          (
+                            PatternNode("Some", List("v")),
+                            TermApp(
+                              TermApp(TermVar(6, 7), TermVar(0, 7)),
+                              TermInt(1)
+                            )
+                          ),
+                          (PatternNode("None", List()), TermInt(0))
+                        )
+                      ),
+                      Some(TypeInt)
+                    )
+                  )
+                )
+              )
+            )
+          )
+        )
+      ) ==> Right(List())
+    }
   }
 
   def typeCheck(
