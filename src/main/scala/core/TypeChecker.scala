@@ -162,21 +162,27 @@ object TypeChecker {
         exprType <- EitherT.liftF(unfoldType(ty1))
         // Get the types of expresion for each case, with a check for pattern
         // type equivalence to the expression type.
-        caseExprTypes <- cases.traverse((v) =>
-          for {
-            patternType <- typeOfPattern(v._1, exprType)
-            _ <- patternType
-              .map(ty =>
-                EitherT(
-                  isTypeEqual(exprType, ty).map(
-                    Either.cond(_, (), Error.MatchPatternTypeMismatch)
+        caseExprTypes <- cases.traverse { (v) =>
+          Context.runE(
+            for {
+              patternTypeInfo <- typeOfPattern(v._1, exprType)
+              _ <- patternTypeInfo._1
+                .map(ty =>
+                  EitherT(
+                    isTypeEqual(exprType, ty).map(
+                      Either.cond(
+                        _,
+                        (),
+                        Error.MatchPatternTypeMismatch
+                      )
+                    )
                   )
                 )
-              )
-              .getOrElse(EitherT.rightT[ContextState, Error]())
-            caseExprType <- typeOf(v._2)
-          } yield typeShift(-1, caseExprType)
-        )
+                .getOrElse(EitherT.rightT[ContextState, Error]())
+              caseExprType <- typeOf(v._2)
+            } yield typeShift(-patternTypeInfo._2, caseExprType)
+          )
+        }
         // Finally, check if all the case expressions have the same type.
         caseExprType <- EitherT(
           caseExprTypes
@@ -231,10 +237,10 @@ object TypeChecker {
     case _                 => ty
   }
 
-  def typeOfPattern(p: Pattern, expr: Type): StateEither[Option[Type]] =
+  def typeOfPattern(p: Pattern, expr: Type): StateEither[(Option[Type], Int)] =
     p match {
-      case t: Term        => typeOf(t).map(Some(_))
-      case PatternDefault => EitherT.pure(None)
+      case t: Term        => typeOf(t).map(v => (Some(v), 0))
+      case PatternDefault => EitherT.pure((None, 0))
       case PatternNode(node, vars) =>
         expr match {
           case TypeVariant(fields) =>
@@ -245,10 +251,11 @@ object TypeChecker {
                   .map(_._2)
                   .toRight(Error.MatchPatternNotInVariant(node))
               )
-              // TODO: Binding variant fields to variables is not correct, the
-              // type variables should be used instead.
-              _ <- bindFieldsToVars(fields, vars)
-            } yield Some(expr)
+              numOfBindVars <- ty match {
+                case tyR @ TypeRecord(_) => typeOfPattern(p, tyR).map(_._2)
+                case _                   => 0.pure[StateEither]
+              }
+            } yield (Some(expr), numOfBindVars)
           case TypeRecord(fields) =>
             for {
               idx <- EitherT(
@@ -260,7 +267,7 @@ object TypeChecker {
               )
               _ <- Context.getType(idx)
               _ <- bindFieldsToVars(fields, vars)
-            } yield Some(expr)
+            } yield (Some(expr), fields.length)
           case _ =>
             EitherT.leftT(Error.MatchPatternTypeMismatch)
         }
@@ -276,7 +283,7 @@ object TypeChecker {
           fields.traverse(f => Context.addBinding(f._1, VarBind(f._2)))
         )
       case false =>
-        EitherT.leftT(Error.MatchPatternWrongVariables + fields + vars)
+        EitherT.leftT(Error.MatchPatternWrongVariables)
     }
 
   def unfoldType(tyS: Type): ContextState[Type] =

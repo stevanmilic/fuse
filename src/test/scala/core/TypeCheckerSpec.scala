@@ -617,12 +617,6 @@ object TypeCheckerSpec extends TestSuite {
       typeCheck(
         List(
           Bind(
-            "&add",
-            TermAbbBind(
-              TermBuiltin(TypeArrow(TypeInt, TypeArrow(TypeInt, TypeInt)))
-            )
-          ),
-          Bind(
             "Option",
             TypeAbbBind(
               TypeAbs(
@@ -661,34 +655,35 @@ object TypeCheckerSpec extends TestSuite {
             )
           ),
           Bind(
-            "some_plus_one",
+            "get_or_else",
             TermAbbBind(
               TermTAbs(
                 "T",
                 TermFix(
                   TermAbs(
-                    "^some_plus_one",
+                    "^get_or_else",
                     TypeArrow(
-                      TypeApp(TypeVar(2, 4), TypeVar(0, 4)),
-                      TypeInt
+                      TypeApp(TypeVar(2, 3), TypeVar(0, 3)),
+                      TypeArrow(TypeVar(0, 3), TypeVar(0, 3))
                     ),
                     TermAbs(
                       "x",
-                      TypeApp(TypeVar(3, 5), TypeVar(1, 5)),
-                      TermMatch(
-                        TermVar(0, 6),
-                        List(
-                          (
-                            PatternNode("Some", List("v")),
-                            TermApp(
-                              TermApp(TermVar(6, 7), TermVar(0, 7)),
-                              TermInt(1)
-                            )
-                          ),
-                          (PatternNode("None", List()), TermInt(0))
-                        )
-                      ),
-                      Some(TypeInt)
+                      TypeApp(TypeVar(3, 4), TypeVar(1, 4)),
+                      TermAbs(
+                        "default",
+                        TypeVar(2, 5),
+                        TermMatch(
+                          TermVar(1, 6),
+                          List(
+                            (
+                              PatternNode("Some", List("v")),
+                              TermVar(0, 7)
+                            ),
+                            (PatternNode("None", List()), TermVar(0, 6))
+                          )
+                        ),
+                        Some(TypeVar(3, 6))
+                      )
                     )
                   )
                 )
@@ -696,7 +691,34 @@ object TypeCheckerSpec extends TestSuite {
             )
           )
         )
-      ) ==> Right(List())
+      ) ==> Right(
+        List(
+          ("Option", Left(KindArrow(KindStar, KindStar))),
+          (
+            "Some",
+            Right(
+              TypeAll(
+                "T",
+                KindStar,
+                TypeArrow(TypeVar(0, 2), TypeApp(TypeVar(1, 2), TypeVar(0, 2)))
+              )
+            )
+          ),
+          (
+            "get_or_else",
+            Right(
+              TypeAll(
+                "T",
+                KindStar,
+                TypeArrow(
+                  TypeApp(TypeVar(2, 3), TypeVar(0, 3)),
+                  TypeArrow(TypeVar(0, 3), TypeVar(0, 3))
+                )
+              )
+            )
+          )
+        )
+      )
     }
   }
 

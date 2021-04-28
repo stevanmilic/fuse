@@ -146,7 +146,7 @@ object Desugar {
           me <- toTerm(e)
           mc <- cases.toList.traverse(c => {
             val exprList = c.e.toList
-            c.p.toList.traverse(toMatchCase(_, exprList))
+            c.p.toList.traverse(p => Context.run(toMatchCase(p, exprList)))
           })
         } yield TermMatch(me, mc.flatten)
       case FAbs(bindings, expr) =>

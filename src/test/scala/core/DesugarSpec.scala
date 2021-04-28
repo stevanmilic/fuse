@@ -1237,7 +1237,7 @@ object DesugarSpec extends TestSuite {
       desugar(
         FFuncDecl(
           FFuncSig(
-            FIdentifier("some_plus_one"),
+            FIdentifier("get_or_else"),
             Some(
               Seq(FTypeParam(FIdentifier("T")))
             ),
@@ -1249,10 +1249,14 @@ object DesugarSpec extends TestSuite {
                     FIdentifier("Option"),
                     Some(Seq(FSimpleType(FIdentifier("T"))))
                   )
+                ),
+                FParam(
+                  FIdentifier("default"),
+                  FSimpleType((FIdentifier("T")))
                 )
               )
             ),
-            FSimpleType(FIdentifier("i32"), None)
+            FSimpleType(FIdentifier("T"), None)
           ),
           Seq(
             FMatch(
@@ -1266,12 +1270,12 @@ object DesugarSpec extends TestSuite {
                     )
                   ),
                   None,
-                  Seq(FAddition(FVar("v"), FInt(1)))
+                  Seq(FVar("v"))
                 ),
                 FCase(
                   Seq(FIdentifierPattern("None")),
                   None,
-                  Seq(FInt(0))
+                  Seq(FVar("default"))
                 )
               )
             )
@@ -1279,45 +1283,44 @@ object DesugarSpec extends TestSuite {
         ),
         List(
           ("Some", NameBind),
-          ("Option", NameBind),
-          ("&add", NameBind)
+          ("Option", NameBind)
         ) // Built-in function.
       ) ==> (List(
-        ("some_plus_one", NameBind),
+        ("get_or_else", NameBind),
         ("Some", NameBind),
-        ("Option", NameBind),
-        ("&add", NameBind)
+        ("Option", NameBind)
       ),
       List(
         Bind(
-          "some_plus_one",
+          "get_or_else",
           TermAbbBind(
             TermTAbs(
               "T",
               TermFix(
                 TermAbs(
-                  "^some_plus_one",
+                  "^get_or_else",
                   TypeArrow(
-                    TypeApp(TypeVar(2, 4), TypeVar(0, 4)),
-                    TypeInt
+                    TypeApp(TypeVar(2, 3), TypeVar(0, 3)),
+                    TypeArrow(TypeVar(0, 3), TypeVar(0, 3))
                   ),
                   TermAbs(
                     "x",
-                    TypeApp(TypeVar(3, 5), TypeVar(1, 5)),
-                    TermMatch(
-                      TermVar(0, 6),
-                      List(
-                        (
-                          PatternNode("Some", List("v")),
-                          TermApp(
-                            TermApp(TermVar(6, 7), TermVar(0, 7)),
-                            TermInt(1)
-                          )
-                        ),
-                        (PatternNode("None", List()), TermInt(0))
-                      )
-                    ),
-                    Some(TypeInt)
+                    TypeApp(TypeVar(3, 4), TypeVar(1, 4)),
+                    TermAbs(
+                      "default",
+                      TypeVar(2, 5),
+                      TermMatch(
+                        TermVar(1, 6),
+                        List(
+                          (
+                            PatternNode("Some", List("v")),
+                            TermVar(0, 7)
+                          ),
+                          (PatternNode("None", List()), TermVar(0, 6))
+                        )
+                      ),
+                      Some(TypeVar(3, 6))
+                    )
                   )
                 )
               )
