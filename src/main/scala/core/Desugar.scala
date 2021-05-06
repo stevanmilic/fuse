@@ -9,6 +9,7 @@ import parser.FuseParser._
 import parser.FuseTypesParser._
 
 object Desugar {
+
   def process(decls: List[FDecl]): ContextState[List[Bind]] =
     decls.traverse(bind(_)).map(_.flatten)
 
@@ -96,7 +97,7 @@ object Desugar {
       )
       val paramsWithFun = funParam :: params.toList
       paramsWithFun.zipWithIndex
-        .foldRight(body) { case ((p, indx), acc) =>
+        .foldRight(body) { case ((p, index), acc) =>
           for {
             typ <- toType(p.t)
             variable <- Context.addName(p.i.value)
@@ -104,9 +105,9 @@ object Desugar {
             retType <- toType(s.r)
             // NOTE: The return type specified by the function signature
             // should be added to the last nested abstraction, since that one
-            // is returnig the value for the function.
+            // is returning the value for the function.
             retVal =
-              if (indx == paramsWithFun.length - 1) Some(retType) else None
+              if (index == paramsWithFun.length - 1) Some(retType) else None
           } yield TermAbs(variable, typ, term, retVal)
         }
         // NOTE: The abstraction is wrapped with a fix combinator to implement
@@ -114,6 +115,7 @@ object Desugar {
         .map(TermFix(_))
     case None =>
       for {
+        _ <- Context.addName(WildcardName)
         typ <- toType(s.r)
         term <- body
       } yield TermAbs(WildcardName, TypeUnit, term, Some(typ))
@@ -149,6 +151,7 @@ object Desugar {
             c.p.toList.traverse(p => Context.run(toMatchCase(p, exprList)))
           })
         } yield TermMatch(me, mc.flatten)
+      // TODO: Add desugar for record access -> TermProj (term projection).
       case FAbs(bindings, expr) =>
         withClosure(bindings.toList, toTermExpr(expr.toList))
       case FMultiplication(i1, i2) =>
@@ -232,8 +235,8 @@ object Desugar {
       Context
         .nameToIndex(ctx, i)
         .orElse(Context.nameToIndex(ctx, toRecAbsId(i))) match {
-        case Some(indx) => (ctx, Some(TermVar(indx, ctx.length)))
-        case None       => (ctx, None)
+        case Some(index) => (ctx, Some(TermVar(index, ctx.length)))
+        case None        => (ctx, None)
       }
     }
 

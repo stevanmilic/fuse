@@ -927,7 +927,7 @@ object DesugarSpec extends TestSuite {
             TermAbs(
               "_",
               TypeUnit,
-              TermApp(TermApp(TermVar(0, 1), TermInt(1)), TermInt(2)),
+              TermApp(TermApp(TermVar(1, 2), TermInt(1)), TermInt(2)),
               Some(TypeInt)
             )
           )
@@ -1018,7 +1018,7 @@ object DesugarSpec extends TestSuite {
             TermAbs(
               "_",
               TypeUnit,
-              TermApp(TermApp(TermVar(0, 1), TermInt(3)), TermInt(2)),
+              TermApp(TermApp(TermVar(1, 2), TermInt(3)), TermInt(2)),
               Some(TypeInt)
             )
           )
@@ -1050,8 +1050,8 @@ object DesugarSpec extends TestSuite {
             TermAbs(
               "_",
               TypeUnit,
-              TermApp(TermApp(TermVar(0, 1), TermInt(0)), TermInt(0)),
-              Some(TypeVar(0, 1))
+              TermApp(TermApp(TermVar(1, 2), TermInt(0)), TermInt(0)),
+              Some(TypeVar(1, 2))
             )
           )
         )
@@ -1470,8 +1470,8 @@ object DesugarSpec extends TestSuite {
               TypeUnit,
               TermLet(
                 "x",
-                TermApp(TermApp(TermVar(0, 2), TermInt(1)), TermInt(2)),
-                TermApp(TermApp(TermVar(2, 3), TermVar(0, 3)), TermInt(1))
+                TermApp(TermApp(TermVar(1, 3), TermInt(1)), TermInt(2)),
+                TermApp(TermApp(TermVar(3, 4), TermVar(0, 4)), TermInt(1))
               ),
               Some(TypeInt)
             )
@@ -1520,8 +1520,8 @@ object DesugarSpec extends TestSuite {
                 TermInt(5),
                 TermLet(
                   "y",
-                  TermApp(TermApp(TermVar(2, 3), TermVar(0, 3)), TermInt(1)),
-                  TermApp(TermApp(TermVar(2, 4), TermVar(1, 4)), TermVar(0, 4))
+                  TermApp(TermApp(TermVar(3, 4), TermVar(0, 4)), TermInt(1)),
+                  TermApp(TermApp(TermVar(3, 5), TermVar(1, 5)), TermVar(0, 5))
                 )
               ),
               Some(TypeInt)
@@ -1577,9 +1577,9 @@ object DesugarSpec extends TestSuite {
                 TermClosure(
                   "x",
                   Some(TypeInt),
-                  TermApp(TermApp(TermVar(1, 2), TermVar(0, 2)), TermInt(1))
+                  TermApp(TermApp(TermVar(2, 3), TermVar(0, 3)), TermInt(1))
                 ),
-                TermApp(TermVar(0, 3), TermInt(5))
+                TermApp(TermVar(0, 4), TermInt(5))
               ),
               Some(TypeInt)
             )
@@ -1588,7 +1588,7 @@ object DesugarSpec extends TestSuite {
       ))
     }
     test(
-      "desuagar function with let expression wtih lambda expression using multiple params"
+      "desugar function with let expression with lambda expression using multiple params"
     ) {
       desugar(
         FFuncDecl(
@@ -1653,19 +1653,19 @@ object DesugarSpec extends TestSuite {
                       Some(TypeInt),
                       TermApp(
                         TermApp(
-                          TermVar(4, 5),
+                          TermVar(5, 6),
                           TermApp(
-                            TermApp(TermVar(3, 5), TermVar(2, 5)),
-                            TermVar(1, 5)
+                            TermApp(TermVar(4, 6), TermVar(2, 6)),
+                            TermVar(1, 6)
                           )
                         ),
-                        TermVar(0, 5)
+                        TermVar(0, 6)
                       )
                     )
                   )
                 ),
                 TermApp(
-                  TermApp(TermApp(TermVar(0, 6), TermInt(1)), TermInt(2)),
+                  TermApp(TermApp(TermVar(0, 7), TermInt(1)), TermInt(2)),
                   TermInt(3)
                 )
               ),
@@ -1675,7 +1675,7 @@ object DesugarSpec extends TestSuite {
         )
       ))
     }
-    test("desuagar function with call expression wtih inline lambda argument") {
+    test("desugar function with call expression with inline lambda argument") {
       desugar(
         FFuncDecl(
           FFuncSig(

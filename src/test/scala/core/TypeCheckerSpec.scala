@@ -720,6 +720,218 @@ object TypeCheckerSpec extends TestSuite {
         )
       )
     }
+    test(
+      "type check recursive function with match expression with adt structure"
+    ) {
+      // TODO: Write the test.
+    }
+    test("type check function with let expression") {
+      typeCheck(
+        List(
+          Bind(
+            "&add",
+            TermAbbBind(
+              TermBuiltin(TypeArrow(TypeInt, TypeArrow(TypeInt, TypeInt)))
+            )
+          ),
+          Bind(
+            "&multiply",
+            TermAbbBind(
+              TermBuiltin(TypeArrow(TypeInt, TypeArrow(TypeInt, TypeInt)))
+            )
+          ),
+          Bind(
+            "one_and_two_plus_one",
+            TermAbbBind(
+              TermAbs(
+                "_",
+                TypeUnit,
+                TermLet(
+                  "x",
+                  TermApp(TermApp(TermVar(1, 3), TermInt(1)), TermInt(2)),
+                  TermApp(TermApp(TermVar(3, 4), TermVar(0, 4)), TermInt(1))
+                ),
+                Some(TypeInt)
+              )
+            )
+          )
+        )
+      ) ==> Right(
+        List(
+          ("&add", Right(TypeArrow(TypeInt, TypeArrow(TypeInt, TypeInt)))),
+          ("&multiply", Right(TypeArrow(TypeInt, TypeArrow(TypeInt, TypeInt)))),
+          ("one_and_two_plus_one", Right(TypeArrow(TypeUnit, TypeInt)))
+        )
+      )
+
+    }
+    test("type check function with sequence of let expressions") {
+      typeCheck(
+        List(
+          Bind(
+            "&add",
+            TermAbbBind(
+              TermBuiltin(TypeArrow(TypeInt, TypeArrow(TypeInt, TypeInt)))
+            )
+          ),
+          Bind(
+            "&multiply",
+            TermAbbBind(
+              TermBuiltin(TypeArrow(TypeInt, TypeArrow(TypeInt, TypeInt)))
+            )
+          ),
+          Bind(
+            "compute_z",
+            TermAbbBind(
+              TermAbs(
+                "_",
+                TypeUnit,
+                TermLet(
+                  "x",
+                  TermInt(5),
+                  TermLet(
+                    "y",
+                    TermApp(TermApp(TermVar(3, 4), TermVar(0, 4)), TermInt(1)),
+                    TermApp(
+                      TermApp(TermVar(3, 5), TermVar(1, 5)),
+                      TermVar(0, 5)
+                    )
+                  )
+                ),
+                Some(TypeInt)
+              )
+            )
+          )
+        )
+      ) ==> Right(
+        List(
+          ("&add", Right(TypeArrow(TypeInt, TypeArrow(TypeInt, TypeInt)))),
+          ("&multiply", Right(TypeArrow(TypeInt, TypeArrow(TypeInt, TypeInt)))),
+          ("compute_z", Right(TypeArrow(TypeUnit, TypeInt)))
+        )
+      )
+    }
+    test("type check function with let expression with lambda expression") {
+      typeCheck(
+        List(
+          Bind(
+            "&add",
+            TermAbbBind(
+              TermBuiltin(TypeArrow(TypeInt, TypeArrow(TypeInt, TypeInt)))
+            )
+          ),
+          Bind(
+            "plus_one",
+            TermAbbBind(
+              TermAbs(
+                "_",
+                TypeUnit,
+                TermLet(
+                  "f",
+                  TermClosure(
+                    "x",
+                    Some(TypeInt),
+                    TermApp(TermApp(TermVar(2, 3), TermVar(0, 3)), TermInt(1))
+                  ),
+                  TermApp(TermVar(0, 4), TermInt(5))
+                ),
+                Some(TypeInt)
+              )
+            )
+          )
+        )
+      ) ==> Right(
+        List(
+          ("&add", Right(TypeArrow(TypeInt, TypeArrow(TypeInt, TypeInt)))),
+          ("plus_one", Right(TypeArrow(TypeUnit, TypeInt)))
+        )
+      )
+    }
+    test(
+      "type check function with call expression with inline lambda argument"
+    ) {
+      typeCheck(
+        List(
+          Bind(
+            "&add",
+            TermAbbBind(
+              TermBuiltin(TypeArrow(TypeInt, TypeArrow(TypeInt, TypeInt)))
+            )
+          ),
+          Bind(
+            "OptionInt",
+            TypeAbbBind(
+              TypeRec(
+                "@OptionInt",
+                KindStar,
+                TypeVariant(
+                  List(
+                    ("None", TypeUnit),
+                    ("Some", TypeRecord(List(("1", TypeInt))))
+                  )
+                )
+              )
+            )
+          ),
+          Bind(
+            "map",
+            TermAbbBind(
+              TermBuiltin(
+                TypeArrow(
+                  TypeVar(0, 2),
+                  TypeArrow(TypeArrow(TypeInt, TypeInt), TypeVar(0, 2))
+                )
+              )
+            )
+          ),
+          Bind(
+            "option_and_one",
+            TermAbbBind(
+              TermFix(
+                TermAbs(
+                  "^option_and_one",
+                  TypeArrow(TypeVar(1, 3), TypeVar(1, 3)),
+                  TermAbs(
+                    "x",
+                    TypeVar(2, 4),
+                    TermApp(
+                      TermApp(
+                        TermVar(2, 5),
+                        TermVar(0, 5)
+                      ),
+                      TermClosure(
+                        "a",
+                        Some(TypeInt),
+                        TermApp(
+                          TermApp(TermVar(5, 6), TermVar(0, 6)),
+                          TermInt(1)
+                        )
+                      )
+                    ),
+                    Some(TypeVar(4, 6))
+                  )
+                )
+              )
+            )
+          )
+        )
+      ) ==> Right(
+        List(
+          ("&add", Right(TypeArrow(TypeInt, TypeArrow(TypeInt, TypeInt)))),
+          ("OptionInt", Left(KindStar)),
+          (
+            "map",
+            Right(
+              TypeArrow(
+                TypeVar(0, 2),
+                TypeArrow(TypeArrow(TypeInt, TypeInt), TypeVar(0, 2))
+              )
+            )
+          ),
+          ("option_and_one", Right(TypeArrow(TypeVar(1, 3), TypeVar(1, 3))))
+        )
+      )
+    }
   }
 
   def typeCheck(

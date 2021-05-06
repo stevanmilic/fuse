@@ -51,11 +51,12 @@ object TypeChecker {
         )
       } yield t
     case TermVar(idx, _) => Context.getType(idx)
-    case TermClosure(variable, Some(varType), expr) =>
+    case TermClosure(variable, Some(variableType), expr) =>
       for {
-        _ <- EitherT.liftF(Context.addBinding(variable, VarBind(varType)))
-        tyT2 <- typeOf(expr)
-      } yield TypeArrow(varType, typeShift(-1, tyT2))
+        _ <- checkKindStar(variableType)
+        _ <- EitherT.liftF(Context.addBinding(variable, VarBind(variableType)))
+        tyT2 <- pureTypeOf(expr)
+      } yield TypeArrow(variableType, typeShift(-1, tyT2))
     case TermClosure(_, None, _) =>
       throw new Exception("Closure without annotation not supported.")
     case TermAbs(variable, variableType, expr, _) =>
@@ -66,8 +67,8 @@ object TypeChecker {
       } yield TypeArrow(variableType, typeShift(-1, tyT2))
     case TermApp(t1, t2) =>
       for {
-        tyT1 <- typeOf(t1)
-        tyT2 <- typeOf(t2)
+        tyT1 <- pureTypeOf(t1)
+        tyT2 <- pureTypeOf(t2)
         tyT1S <- EitherT.liftF(simplifyType(tyT1))
         ty <- tyT1S match {
           case TypeArrow(tyT11, tyT12) =>
@@ -130,7 +131,7 @@ object TypeChecker {
     case TermLet(variable, t1, t2) =>
       for {
         tyT1 <- pureTypeOf(t1)
-        ctx1 = EitherT.liftF(Context.addBinding(variable, VarBind(tyT1)))
+        _ <- EitherT.liftF(Context.addBinding(variable, VarBind(tyT1)))
         tyT2 <- pureTypeOf(t2)
       } yield typeShift(-1, tyT2)
     case TermTAbs(v, t) =>
@@ -179,7 +180,7 @@ object TypeChecker {
                   )
                 )
                 .getOrElse(EitherT.rightT[ContextState, Error]())
-              caseExprType <- typeOf(v._2)
+              caseExprType <- pureTypeOf(v._2)
             } yield typeShift(-patternTypeInfo._2, caseExprType)
           )
         }
