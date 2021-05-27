@@ -84,65 +84,76 @@ object Desugar {
   } yield t(abs)
 
   def withFuncAbs(
-      s: FFuncSig,
+      sig: FFuncSig,
       body: ContextState[Term]
-  ): ContextState[Term] = s.p match {
+  ): ContextState[Term] = sig.p match {
     case Some(params) =>
-      // The implicit param is added to represent the function we abstract,
-      // in order to provide possibility for recursive call. Note that the
-      // abstraction is wrapped in a fix combinator.
-      val funParam = FParam(
-        FIdentifier(toRecAbsId(s.i.value)),
-        FFuncType(params.map(_.t), s.r)
-      )
-      val paramsWithFun = funParam :: params.toList
-      paramsWithFun.zipWithIndex
+      val func = params.zipWithIndex
         .foldRight(body) { case ((p, index), acc) =>
           for {
             typ <- toType(p.t)
             variable <- Context.addName(p.i.value)
             term <- acc
-            retType <- toType(s.r)
+            retType <- toType(sig.r)
             // NOTE: The return type specified by the function signature
             // should be added to the last nested abstraction, since that one
             // is returning the value for the function.
             retVal =
-              if (index == paramsWithFun.length - 1) Some(retType) else None
+              if (index == params.length - 1) Some(retType) else None
           } yield TermAbs(variable, typ, term, retVal)
         }
-        // NOTE: The abstraction is wrapped with a fix combinator to implement
-        // recursion.
-        .map(TermFix(_))
+      withFixCombinator(sig.i.value, params.map(_.t).toList, sig.r, func)
     case None =>
       for {
         _ <- Context.addName(WildcardName)
-        typ <- toType(s.r)
+        typ <- toType(sig.r)
         term <- body
       } yield TermAbs(WildcardName, TypeUnit, term, Some(typ))
   }
 
-  def toTermExpr(exprs: List[FExpr]): ContextState[Term] = exprs match {
+  def toTermExpr(
+      exprs: List[FExpr],
+      letVariable: Option[(String, Option[FType])] = None
+  ): ContextState[Term] = exprs match {
     case Nil => State.pure(TermUnit)
-    case l @ FLetExpr(i, _, e) :: lexprs =>
+    case l @ FLetExpr(i, t, e) :: lexprs =>
       for {
-        lt <- withTermLet(i.value, e.toList)
+        lt <- withTermLet(i.value, t, e.toList)
         le <- toTermExpr(lexprs)
       } yield lt(le)
-    case h :: Nil => toTerm(h)
+    case h :: Nil => toTerm(h, letVariable)
     case _        => throw new Exception("invalid expr")
   }
 
-  def withTermLet(i: String, expr: List[FExpr]): ContextState[Term => Term] =
+  def withTermLet(
+      i: String,
+      t: Option[FType],
+      expr: List[FExpr]
+  ): ContextState[Term => Term] =
     for {
-      t1 <- toTermExpr(expr)
+      t1 <- toTermExpr(expr, Some((i, t)))
       v <- Context.addName(i)
     } yield t2 => TermLet(v, t1, t2): Term
 
-  def toTerm(e: FExpr): ContextState[Term] =
+  def toTerm(
+      e: FExpr,
+      letVariable: Option[(String, Option[FType])] = None
+  ): ContextState[Term] =
     e match {
-      case FApp(e, args) =>
-        val v = e :: args.toList.flatten.flatten
-        v.traverse(toTerm(_)).map(_.reduceLeft(TermApp(_, _)))
+      case FApp(e, typeArgs, args) =>
+        for {
+          exprTerm <- toTerm(e)
+          typedTerm <- typeArgs
+            .getOrElse(Seq())
+            .toList
+            .traverse(toType(_))
+            .map(_.foldLeft(exprTerm)((term, ty) => TermTApp(term, ty)))
+          computedTerm <- args.toList.flatten.flatten
+            .traverse(toTerm(_))
+            .map(
+              _.foldLeft(typedTerm)((term, arg) => TermApp(term, arg))
+            )
+        } yield computedTerm
       case FMatch(e, cases) =>
         for {
           me <- toTerm(e)
@@ -153,7 +164,15 @@ object Desugar {
         } yield TermMatch(me, mc.flatten)
       // TODO: Add desugar for record access -> TermProj (term projection).
       case FAbs(bindings, expr) =>
-        withClosure(bindings.toList, toTermExpr(expr.toList))
+        letVariable match {
+          case Some((f, Some(fType))) =>
+            val closure = withClosure(bindings.toList, toTermExpr(expr.toList))
+            Context.run(
+              withFixCombinator(f, bindings.map(_.t.get).toList, fType, closure)
+            )
+          case _ =>
+            withClosure(bindings.toList, toTermExpr(expr.toList))
+        }
       case FMultiplication(i1, i2) =>
         toTermOperator("&multiply", i1, i2)
       // TODO: Add other operators.
@@ -164,7 +183,7 @@ object Desugar {
       case FVar(i) =>
         toTermVar(i).map(_ match {
           case Some(v) => v
-          case None    => throw new Exception("Var not found")
+          case None    => throw new Exception(s"Var not found $i")
         })
       case FBool(true)  => State.pure(TermTrue)
       case FBool(false) => State.pure(TermFalse)
@@ -185,6 +204,22 @@ object Desugar {
         term <- acc
       } yield TermClosure(v, Some(typ), term)
     }
+
+  def withFixCombinator(
+      name: String,
+      params: List[FType],
+      returnType: FType,
+      func: ContextState[Term]
+  ): ContextState[Term] = for {
+    // The implicit param is added to represent the function we abstract,
+    // in order to provide possibility for recursive call. Note that the
+    // abstraction is wrapped in a fix combinator.
+    ty <- toType(FFuncType(params, returnType))
+    variable <- Context.addName(toRecAbsId(name))
+    term <- func
+    // NOTE: The abstraction is wrapped with a fix combinator to implement
+    // recursion.
+  } yield TermFix(TermAbs(variable, ty, term))
 
   def toTermOperator(
       func: String,

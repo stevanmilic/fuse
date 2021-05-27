@@ -76,6 +76,90 @@ object TypeCheckerSpec extends TestSuite {
         )
       )
     }
+    test("type check recursive function") {
+      typeCheck(
+        List(
+          Bind(
+            "&sub",
+            TermAbbBind(
+              TermBuiltin(TypeArrow(TypeInt, TypeArrow(TypeInt, TypeInt)))
+            )
+          ),
+          Bind(
+            "&add",
+            TermAbbBind(
+              TermBuiltin(TypeArrow(TypeInt, TypeArrow(TypeInt, TypeInt)))
+            )
+          ),
+          Bind(
+            "fib",
+            TermAbbBind(
+              TermFix(
+                TermAbs(
+                  "^fib",
+                  TypeArrow(
+                    TypeInt,
+                    TypeArrow(TypeInt, TypeArrow(TypeInt, TypeInt))
+                  ),
+                  TermAbs(
+                    "n",
+                    TypeInt,
+                    TermAbs(
+                      "a",
+                      TypeInt,
+                      TermAbs(
+                        "b",
+                        TypeInt,
+                        TermMatch(
+                          TermVar(2, 6),
+                          List(
+                            (TermInt(0), TermVar(0, 6)),
+                            (
+                              PatternDefault,
+                              TermApp(
+                                TermApp(
+                                  TermApp(
+                                    TermVar(3, 6),
+                                    TermApp(
+                                      TermApp(TermVar(5, 6), TermVar(2, 6)),
+                                      TermInt(1)
+                                    )
+                                  ),
+                                  TermVar(0, 6)
+                                ),
+                                TermApp(
+                                  TermApp(TermVar(4, 6), TermVar(1, 6)),
+                                  TermVar(0, 6)
+                                )
+                              )
+                            )
+                          )
+                        ),
+                        Some(TypeInt)
+                      )
+                    )
+                  )
+                )
+              )
+            )
+          )
+        )
+      ) ==> Right(
+        List(
+          ("&sub", Right(TypeArrow(TypeInt, TypeArrow(TypeInt, TypeInt)))),
+          ("&add", Right(TypeArrow(TypeInt, TypeArrow(TypeInt, TypeInt)))),
+          (
+            "fib",
+            Right(
+              TypeArrow(
+                TypeInt,
+                TypeArrow(TypeInt, TypeArrow(TypeInt, TypeInt))
+              )
+            )
+          )
+        )
+      )
+    }
     test("type check function with record data constructor") {
       typeCheck(
         List(
@@ -723,7 +807,174 @@ object TypeCheckerSpec extends TestSuite {
     test(
       "type check recursive function with match expression with adt structure"
     ) {
-      // TODO: Write the test.
+      typeCheck(
+        List(
+          Bind(
+            "List",
+            TypeAbbBind(
+              TypeAbs(
+                "A",
+                TypeRec(
+                  "@List",
+                  KindArrow(KindStar, KindStar),
+                  TypeVariant(
+                    List(
+                      ("Nil", TypeUnit),
+                      (
+                        "Cons",
+                        TypeRecord(
+                          List(
+                            ("1", TypeVar(1, 2)),
+                            ("2", TypeApp(TypeVar(0, 2), TypeVar(1, 2)))
+                          )
+                        )
+                      )
+                    )
+                  )
+                )
+              )
+            )
+          ),
+          Bind(
+            "Nil",
+            TermAbbBind(
+              TermTAbs(
+                "A",
+                TermApp(
+                  TermFold(TypeApp(TypeVar(1, 2), TypeVar(0, 2))),
+                  TermTag(
+                    "Nil",
+                    TermUnit,
+                    TypeApp(TypeVar(1, 2), TypeVar(0, 2))
+                  )
+                )
+              )
+            )
+          ),
+          Bind(
+            "Cons",
+            TermAbbBind(
+              TermTAbs(
+                "A",
+                TermAbs(
+                  "#1",
+                  TypeVar(0, 3),
+                  TermAbs(
+                    "#2",
+                    TypeApp(TypeVar(3, 4), TypeVar(1, 4)),
+                    TermApp(
+                      TermFold(TypeApp(TypeVar(4, 5), TypeVar(2, 5))),
+                      TermTag(
+                        "Cons",
+                        TermRecord(
+                          List(("1", TermVar(1, 5)), ("2", TermVar(0, 5)))
+                        ),
+                        TypeApp(TypeVar(4, 5), TypeVar(2, 5))
+                      )
+                    )
+                  )
+                )
+              )
+            )
+          ),
+          Bind(
+            "map",
+            TermAbbBind(
+              TermTAbs(
+                "A",
+                TermTAbs(
+                  "B",
+                  TermFix(
+                    TermAbs(
+                      "^map",
+                      TypeArrow(
+                        TypeApp(TypeVar(4, 5), TypeVar(1, 5)),
+                        TypeArrow(
+                          TypeArrow(TypeVar(1, 5), TypeVar(0, 5)),
+                          TypeApp(TypeVar(4, 5), TypeVar(0, 5))
+                        )
+                      ),
+                      TermAbs(
+                        "l",
+                        TypeApp(TypeVar(5, 6), TypeVar(2, 6)),
+                        TermAbs(
+                          "f",
+                          TypeArrow(TypeVar(3, 7), TypeVar(2, 7)),
+                          TermLet(
+                            "iter",
+                            TermFix(
+                              TermAbs(
+                                "^iter",
+                                TypeArrow(
+                                  TypeApp(TypeVar(7, 8), TypeVar(3, 8)),
+                                  TypeArrow(
+                                    TypeApp(TypeVar(7, 8), TypeVar(4, 8)),
+                                    TypeApp(TypeVar(7, 8), TypeVar(3, 8))
+                                  )
+                                ),
+                                TermClosure(
+                                  "acc",
+                                  Some(TypeApp(TypeVar(8, 9), TypeVar(4, 9))),
+                                  TermClosure(
+                                    "l",
+                                    Some(
+                                      TypeApp(TypeVar(9, 10), TypeVar(6, 10))
+                                    ),
+                                    TermMatch(
+                                      TermVar(0, 11),
+                                      List(
+                                        (
+                                          PatternNode("Nil", List()),
+                                          TermVar(1, 11)
+                                        ),
+                                        (
+                                          PatternNode("Cons", List("h", "t")),
+                                          TermApp(
+                                            TermApp(
+                                              TermVar(4, 13),
+                                              TermApp(
+                                                TermApp(
+                                                  TermTApp(
+                                                    TermVar(10, 13),
+                                                    // TODO: Check if correct type var is set.
+                                                    TypeVar(8, 13)
+                                                  ),
+                                                  TermApp(
+                                                    TermVar(5, 13),
+                                                    TermVar(1, 13)
+                                                  )
+                                                ),
+                                                TermVar(3, 13)
+                                              )
+                                            ),
+                                            TermVar(0, 13)
+                                          )
+                                        )
+                                      )
+                                    )
+                                  )
+                                )
+                              )
+                            ),
+                            TermApp(
+                              TermApp(
+                                TermVar(0, 9),
+                                TermTApp(TermVar(7, 9), TypeVar(4, 9))
+                              ),
+                              TermVar(2, 9)
+                            )
+                          ),
+                          Some(TypeApp(TypeVar(8, 9), TypeVar(4, 9)))
+                        )
+                      )
+                    )
+                  )
+                )
+              )
+            )
+          )
+        )
+      ) ==> Right(List())
     }
     test("type check function with let expression") {
       typeCheck(

@@ -100,6 +100,7 @@ object FuseExpressionSpec extends TestSuite {
     test("parse simple call expressions") {
       parse("sum(3, 2)") ==> FApp(
         FVar("sum"),
+        None,
         Seq(Some(Seq(FInt(3), FInt(2))))
       )
     }
@@ -124,9 +125,19 @@ object FuseExpressionSpec extends TestSuite {
           FVar("l"),
           Seq(FVar("fold_left"))
         ),
+        None,
         Seq(
           Some(Seq((FInt(0)))),
           Some(Seq(FVar("sum")))
+        )
+      )
+    }
+    test("parse call expressions with type arguments") {
+      parse("Cons[T](x, l)") ==> FApp(
+        FVar("Cons"),
+        Some(Seq(FSimpleType(FIdentifier("T")))),
+        Seq(
+          Some(Seq(FVar("x"), FVar("l")))
         )
       )
     }
@@ -136,6 +147,7 @@ object FuseExpressionSpec extends TestSuite {
           FVar("l"),
           Seq(FVar("map"))
         ),
+        None,
         Seq(
           Some(
             Seq(
@@ -159,6 +171,7 @@ object FuseExpressionSpec extends TestSuite {
           FVar("l"),
           Seq(FVar("map"))
         ),
+        None,
         Seq(
           Some(
             Seq(
@@ -206,10 +219,12 @@ object FuseExpressionSpec extends TestSuite {
           FAddition(
             FApp(
               FVar("t"),
+              None,
               Seq(Some(Seq(FInt(5))))
             ),
             FApp(
               FVar("t"),
+              None,
               Seq(Some(Seq(FInt(6))))
             )
           )
@@ -251,12 +266,14 @@ object FuseExpressionSpec extends TestSuite {
             Seq(
               FApp(
                 FVar("f"),
+                None,
                 Seq(Some(Seq(FVar("v"))))
               )
             )
           ),
           FApp(
             FVar("g"),
+            None,
             Seq(Some(Seq(FVar("fv"))))
           )
         )
@@ -408,6 +425,7 @@ object FuseExpressionSpec extends TestSuite {
       parse("match S(1, 2):\n S(1, _) | S(_, 2) => 3") ==> FMatch(
         FApp(
           FVar("S"),
+          None,
           Seq(Some(Seq(FInt(1), FInt(2))))
         ),
         Seq(

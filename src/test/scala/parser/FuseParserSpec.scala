@@ -220,7 +220,7 @@ object FuseParserSpec extends TestSuite {
     }
     test("parse trait definition") {
       parse(
-        "trait Shape:\n    def area() -> f32\n    def surface() -> f32"
+        "trait Shape:\n    fun area() -> f32;\n    fun surface() -> f32;"
       ) ==> Seq(
         FTraitDecl(
           FIdentifier("Shape"),
@@ -246,9 +246,9 @@ object FuseParserSpec extends TestSuite {
         )
       )
     }
-    test("parse trait defination with function definition") {
+    test("parse trait definition with function definition") {
       parse(
-        "trait Shape:\n def area() -> f32\n def double_area() -> f32:\n  this.area*2"
+        "trait Shape:\n fun area() -> f32;\n fun double_area() -> f32\n  this.area*2"
       ) ==> Seq(
         FTraitDecl(
           FIdentifier("Shape"),
@@ -287,7 +287,7 @@ object FuseParserSpec extends TestSuite {
     }
     test("parse trait with default generic types") {
       parse(
-        "trait Add[V = Self, O = Self]:\n    def add(other: V) -> O"
+        "trait Add[V = Self, O = Self]:\n    fun add(other: V) -> O;"
       ) ==> Seq(
         FTraitDecl(
           FIdentifier("Add"),
@@ -324,7 +324,7 @@ object FuseParserSpec extends TestSuite {
       )
     }
     test("parse function definition with 1 * 2") {
-      parse("def one_and_two() -> i32:\n    1 * 2") ==> Seq(
+      parse("fun one_and_two() -> i32\n    1 * 2") ==> Seq(
         FFuncDecl(
           FFuncSig(
             FIdentifier("one_and_two"),
@@ -337,7 +337,7 @@ object FuseParserSpec extends TestSuite {
       )
     }
     test("parse function definition with additive expression") {
-      parse("def sum(x: i32, y: i32) -> i32:\n    x + y") ==> Seq(
+      parse("fun sum(x: i32, y: i32) -> i32\n    x + y") ==> Seq(
         FFuncDecl(
           FFuncSig(
             FIdentifier("sum"),
@@ -367,7 +367,7 @@ object FuseParserSpec extends TestSuite {
     }
     test("parse function definition with simple call expressions") {
       parse(
-        "def sum_three_and_two() -> i32:\n sum(3, 2)"
+        "fun sum_three_and_two() -> i32\n sum(3, 2)"
       ) ==> Seq(
         FFuncDecl(
           FFuncSig(
@@ -379,6 +379,7 @@ object FuseParserSpec extends TestSuite {
           Seq(
             FApp(
               FVar("sum"),
+              None,
               Seq(Some(Seq(FInt(3), FInt(2))))
             )
           )
@@ -387,7 +388,7 @@ object FuseParserSpec extends TestSuite {
     }
     test("parse function definition with call expressions") {
       parse(
-        "def sum_list(l: List[i32]) -> i32:\n l.fold_left(0)(sum)"
+        "fun sum_list(l: List[i32]) -> i32\n l.fold_left(0)(sum)"
       ) ==> Seq(
         FFuncDecl(
           FFuncSig(
@@ -412,7 +413,68 @@ object FuseParserSpec extends TestSuite {
                 FVar("l"),
                 Seq(FVar("fold_left"))
               ),
+              None,
               Seq(Some(Seq((FInt(0)))), Some(Seq(FVar("sum"))))
+            )
+          )
+        )
+      )
+    }
+    test("parse recursive function definition") {
+      parse(
+        "fun fib(n: i32, a: i32, b: i32) -> i32\n match n:\n  0 => b\n  _ => fib(n - 1, b, a + b)"
+      ) ==> Seq(
+        FFuncDecl(
+          FFuncSig(
+            FIdentifier("fib"),
+            None,
+            Some(
+              Seq(
+                FParam(
+                  FIdentifier("n"),
+                  FSimpleType(FIdentifier("i32"))
+                ),
+                FParam(
+                  FIdentifier("a"),
+                  FSimpleType(FIdentifier("i32"))
+                ),
+                FParam(
+                  FIdentifier("b"),
+                  FSimpleType(FIdentifier("i32"))
+                )
+              )
+            ),
+            FSimpleType(FIdentifier("i32"), None)
+          ),
+          Seq(
+            FMatch(
+              FVar("n"),
+              Seq(
+                FCase(
+                  Seq(FInt(0)),
+                  None,
+                  Seq(FVar("b"))
+                ),
+                FCase(
+                  Seq(FWildCardPattern),
+                  None,
+                  Seq(
+                    FApp(
+                      FVar("fib"),
+                      None,
+                      Seq(
+                        Some(
+                          Seq(
+                            FSubtraction(FVar("n"), FInt(1)),
+                            FVar("b"),
+                            FAddition(FVar("a"), FVar("b"))
+                          )
+                        )
+                      )
+                    )
+                  )
+                )
+              )
             )
           )
         )
@@ -420,7 +482,7 @@ object FuseParserSpec extends TestSuite {
     }
     test("parse tail func definition with generics") {
       parse(
-        "def map[A, B](l: List[A], f: A -> B) -> List[B]:\n let iter = (acc, l) => {\n  match l:\n   Nil => acc\n   Cons(h, t) => iter(Cons(f(h), acc), t)\n  }\n iter(List(), l)"
+        "fun map[A, B](l: List[A], f: A -> B) -> List[B]\n let iter: List[B] = (acc: List[B], l: List[A]) => {\n  match l:\n   Nil => acc\n   Cons(h, t) => iter(Cons[B](f(h), acc), t)\n  }\n iter(Nil[B](), l)"
       ) ==> Seq(
         FFuncDecl(
           FFuncSig(
@@ -454,12 +516,33 @@ object FuseParserSpec extends TestSuite {
           Seq(
             FLetExpr(
               FIdentifier("iter"),
-              None,
+              Some(
+                FSimpleType(
+                  FIdentifier("List"),
+                  Some(Seq(FSimpleType(FIdentifier("B"))))
+                )
+              ),
               Seq(
                 FAbs(
                   Seq(
-                    FBinding(FIdentifier("acc")),
-                    FBinding(FIdentifier("l"))
+                    FBinding(
+                      FIdentifier("acc"),
+                      Some(
+                        FSimpleType(
+                          FIdentifier("List"),
+                          Some(Seq(FSimpleType(FIdentifier("B"))))
+                        )
+                      )
+                    ),
+                    FBinding(
+                      FIdentifier("l"),
+                      Some(
+                        FSimpleType(
+                          FIdentifier("List"),
+                          Some(Seq(FSimpleType(FIdentifier("A"))))
+                        )
+                      )
+                    )
                   ),
                   Seq(
                     FMatch(
@@ -484,16 +567,19 @@ object FuseParserSpec extends TestSuite {
                           Seq(
                             FApp(
                               FVar("iter"),
+                              None,
                               Seq(
                                 Some(
                                   Seq(
                                     FApp(
                                       FVar("Cons"),
+                                      Some(List(FSimpleType(FIdentifier("B")))),
                                       Seq(
                                         Some(
                                           Seq(
                                             FApp(
                                               FVar("f"),
+                                              None,
                                               Seq(
                                                 Some(
                                                   Seq(FVar("h"))
@@ -520,11 +606,13 @@ object FuseParserSpec extends TestSuite {
             ),
             FApp(
               FVar("iter"),
+              None,
               Seq(
                 Some(
                   Seq(
                     FApp(
-                      FVar("List"),
+                      FVar("Nil"),
+                      Some(Seq(FSimpleType(FIdentifier("B")))),
                       Seq(None)
                     ),
                     FVar("l")
@@ -538,7 +626,7 @@ object FuseParserSpec extends TestSuite {
     }
     test("parse type implemantion") {
       parse(
-        "impl Point:\n def x_diff(other: Point) -> f32:\n  math.abs(this.x - other.x)"
+        "impl Point:\n fun x_diff(other: Point) -> f32\n  math.abs(this.x - other.x)"
       ) ==> Seq(
         FTypeFuncDecls(
           FIdentifier("Point"),
@@ -564,6 +652,7 @@ object FuseParserSpec extends TestSuite {
                     FVar("math"),
                     Seq(FVar("abs"))
                   ),
+                  None,
                   Seq(
                     Some(
                       Seq(
@@ -589,7 +678,7 @@ object FuseParserSpec extends TestSuite {
     }
     test("parse trait implementation") {
       parse(
-        "impl Shape for Circle:\n    def area() -> f32:\n        this.radius * this.radius * 3.14"
+        "impl Shape for Circle:\n    fun area() -> f32\n        this.radius * this.radius * 3.14"
       ) ==> Seq(
         FTraitInstance(
           FIdentifier("Shape"),
@@ -658,9 +747,9 @@ object FuseParserSpec extends TestSuite {
     ) {
       assertMatch(
         runParser(
-          "impl Shape for Circle:\n    def area() -> f32:\n this.radius * this.radius * 3.14"
+          "impl Shape for Circle:\n    fun area() -> f32\n this.radius * this.radius * 3.14"
         )
-      ) { case Failure(ParseError(Position(79, 3, 34), _, _)) =>
+      ) { case Failure(ParseError(Position(78, 3, 34), _, _)) =>
       }
     }
   }

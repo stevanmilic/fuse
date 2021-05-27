@@ -45,10 +45,12 @@ object FuseExpressionParser {
   case class FVar(value: String) extends FInfixExpr
   case class FProj(e: FInfixExpr, ids: Seq[FVar]) extends FInfixExpr
   type FArguments = Option[Seq[FExpr]]
+  type FTypeArguments = Option[Seq[FType]]
   // NOTE: This is the actual application, but the arguments can be optional
   // indicating the abstraction accepts a unit.
   case class FApp(
       e: FExpr,
+      typeArguments: FTypeArguments = None,
       args: Seq[FArguments]
   ) extends FInfixExpr
 
@@ -128,8 +130,9 @@ class FuseExpressionParser(val input: ParserInput) extends FuseTypesParser {
       def ArgumentExpr = rule { LambdaExpr | InfixExpr }
       def ArgumentList = rule { ArgumentExpr.+(",") }
       def Arguments = rule { "(" ~ ArgumentList.? ~ ")" }
+      def TypeArguments = rule { "[" ~ Type.+(",") ~ "]" }
       rule {
-        (Proj | PrimaryExpr) ~ Arguments.+ ~> FApp
+        (Proj | PrimaryExpr) ~ TypeArguments.? ~ Arguments.+ ~> FApp
       }
     }
 

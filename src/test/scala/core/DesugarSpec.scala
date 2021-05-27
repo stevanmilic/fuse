@@ -1005,6 +1005,7 @@ object DesugarSpec extends TestSuite {
           Seq(
             FApp(
               FVar("sum"),
+              None,
               Seq(Some(Seq(FInt(3), FInt(2))))
             )
           )
@@ -1037,6 +1038,7 @@ object DesugarSpec extends TestSuite {
           Seq(
             FApp(
               FVar("Point"),
+              None,
               Seq(Some(Seq(FInt(0), FInt(0))))
             )
           )
@@ -1076,6 +1078,7 @@ object DesugarSpec extends TestSuite {
           Seq(
             FApp(
               FVar("Some"),
+              None,
               Seq(Some(Seq(FVar("x"))))
             )
           )
@@ -1109,6 +1112,122 @@ object DesugarSpec extends TestSuite {
         )
       ))
     }
+    test("desugar recursive function") {
+      desugar(
+        FFuncDecl(
+          FFuncSig(
+            FIdentifier("fib"),
+            None,
+            Some(
+              Seq(
+                FParam(
+                  FIdentifier("n"),
+                  FSimpleType(FIdentifier("i32"))
+                ),
+                FParam(
+                  FIdentifier("a"),
+                  FSimpleType(FIdentifier("i32"))
+                ),
+                FParam(
+                  FIdentifier("b"),
+                  FSimpleType(FIdentifier("i32"))
+                )
+              )
+            ),
+            FSimpleType(FIdentifier("i32"), None)
+          ),
+          Seq(
+            FMatch(
+              FVar("n"),
+              Seq(
+                FCase(
+                  Seq(FInt(0)),
+                  None,
+                  Seq(FVar("b"))
+                ),
+                FCase(
+                  Seq(FWildCardPattern),
+                  None,
+                  Seq(
+                    FApp(
+                      FVar("fib"),
+                      None,
+                      Seq(
+                        Some(
+                          Seq(
+                            FSubtraction(FVar("n"), FInt(1)),
+                            FVar("b"),
+                            FAddition(FVar("a"), FVar("b"))
+                          )
+                        )
+                      )
+                    )
+                  )
+                )
+              )
+            )
+          )
+        ),
+        List(("&add", NameBind), ("&sub", NameBind))
+      ) ==> (List(
+        ("fib", NameBind),
+        ("&add", NameBind),
+        ("&sub", NameBind)
+      ), List(
+        Bind(
+          "fib",
+          TermAbbBind(
+            TermFix(
+              TermAbs(
+                "^fib",
+                TypeArrow(
+                  TypeInt,
+                  TypeArrow(TypeInt, TypeArrow(TypeInt, TypeInt))
+                ),
+                TermAbs(
+                  "n",
+                  TypeInt,
+                  TermAbs(
+                    "a",
+                    TypeInt,
+                    TermAbs(
+                      "b",
+                      TypeInt,
+                      TermMatch(
+                        TermVar(2, 6),
+                        List(
+                          (TermInt(0), TermVar(0, 6)),
+                          (
+                            PatternDefault,
+                            TermApp(
+                              TermApp(
+                                TermApp(
+                                  TermVar(3, 6),
+                                  TermApp(
+                                    TermApp(TermVar(5, 6), TermVar(2, 6)),
+                                    TermInt(1)
+                                  )
+                                ),
+                                TermVar(0, 6)
+                              ),
+                              TermApp(
+                                TermApp(TermVar(4, 6), TermVar(1, 6)),
+                                TermVar(0, 6)
+                              )
+                            )
+                          )
+                        )
+                      ),
+                      Some(TypeInt)
+                    )
+                  )
+                )
+              )
+            )
+          )
+        )
+      ))
+    }
     test("desugar function with type parameters") {
       desugar(
         FFuncDecl(
@@ -1133,6 +1252,7 @@ object DesugarSpec extends TestSuite {
           Seq(
             FApp(
               FVar("Some"),
+              None,
               Seq(Some(Seq(FVar("x"))))
             )
           )
@@ -1368,6 +1488,7 @@ object DesugarSpec extends TestSuite {
                   Seq(
                     FApp(
                       FVar("fib"),
+                      None,
                       Seq(
                         Some(Seq(FSubtraction(FVar("n"), FInt(1)))),
                         Some(Seq(FAddition(FVar("a"), FVar("b"))))
@@ -1557,7 +1678,7 @@ object DesugarSpec extends TestSuite {
                 )
               )
             ),
-            FApp(FVar("f"), Seq(Some(Seq(FInt(5)))))
+            FApp(FVar("f"), None, Seq(Some(Seq(FInt(5)))))
           )
         ),
         List(("&add", NameBind)) // Built-in function.
@@ -1624,7 +1745,7 @@ object DesugarSpec extends TestSuite {
                 )
               )
             ),
-            FApp(FVar("g"), Seq(Some(Seq(FInt(1), FInt(2), FInt(3)))))
+            FApp(FVar("g"), None, Seq(Some(Seq(FInt(1), FInt(2), FInt(3)))))
           )
         ),
         List(("&multiply", NameBind), ("&add", NameBind)) // Built-in function.
@@ -1694,6 +1815,7 @@ object DesugarSpec extends TestSuite {
           Seq(
             FApp(
               FVar("map"),
+              None,
               Seq(
                 Some(
                   Seq(
@@ -1752,6 +1874,255 @@ object DesugarSpec extends TestSuite {
                     )
                   ),
                   Some(TypeVar(4, 6))
+                )
+              )
+            )
+          )
+        )
+      ))
+    }
+    test("desugar function with recursive lambda function") {
+      desugar(
+        FFuncDecl(
+          FFuncSig(
+            FIdentifier("map"),
+            Some(
+              Seq(FTypeParam(FIdentifier("A")), FTypeParam(FIdentifier("B")))
+            ),
+            Some(
+              Seq(
+                FParam(
+                  FIdentifier("l"),
+                  FSimpleType(
+                    FIdentifier("List"),
+                    Some(Seq(FSimpleType(FIdentifier("A"))))
+                  )
+                ),
+                FParam(
+                  FIdentifier("f"),
+                  FFuncType(
+                    Seq(FSimpleType(FIdentifier("A"))),
+                    FSimpleType(FIdentifier("B"))
+                  )
+                )
+              )
+            ),
+            FSimpleType(
+              FIdentifier("List"),
+              Some(Seq(FSimpleType(FIdentifier("B"))))
+            )
+          ),
+          Seq(
+            FLetExpr(
+              FIdentifier("iter"),
+              Some(
+                FSimpleType(
+                  FIdentifier("List"),
+                  Some(Seq(FSimpleType(FIdentifier("B"))))
+                )
+              ),
+              Seq(
+                FAbs(
+                  Seq(
+                    FBinding(
+                      FIdentifier("acc"),
+                      Some(
+                        FSimpleType(
+                          FIdentifier("List"),
+                          Some(Seq(FSimpleType(FIdentifier("B"))))
+                        )
+                      )
+                    ),
+                    FBinding(
+                      FIdentifier("l"),
+                      Some(
+                        FSimpleType(
+                          FIdentifier("List"),
+                          Some(Seq(FSimpleType(FIdentifier("A"))))
+                        )
+                      )
+                    )
+                  ),
+                  Seq(
+                    FMatch(
+                      FVar("l"),
+                      Seq(
+                        FCase(
+                          Seq(FIdentifierPattern("Nil")),
+                          None,
+                          Seq(FVar("acc"))
+                        ),
+                        FCase(
+                          Seq(
+                            FVariantOrRecordPattern(
+                              FIdentifier("Cons"),
+                              Seq(
+                                FIdentifierPattern("h"),
+                                FIdentifierPattern("t")
+                              )
+                            )
+                          ),
+                          None,
+                          Seq(
+                            FApp(
+                              FVar("iter"),
+                              None,
+                              Seq(
+                                Some(
+                                  Seq(
+                                    FApp(
+                                      FVar("Cons"),
+                                      Some(List(FSimpleType(FIdentifier("B")))),
+                                      Seq(
+                                        Some(
+                                          Seq(
+                                            FApp(
+                                              FVar("f"),
+                                              None,
+                                              Seq(
+                                                Some(
+                                                  Seq(FVar("h"))
+                                                )
+                                              )
+                                            ),
+                                            FVar("acc")
+                                          )
+                                        )
+                                      )
+                                    ),
+                                    FVar("t")
+                                  )
+                                )
+                              )
+                            )
+                          )
+                        )
+                      )
+                    )
+                  )
+                )
+              )
+            ),
+            FApp(
+              FVar("iter"),
+              None,
+              Seq(
+                Some(
+                  Seq(
+                    FApp(
+                      FVar("Nil"),
+                      Some(Seq(FSimpleType(FIdentifier("B")))),
+                      Seq(None)
+                    ),
+                    FVar("l")
+                  )
+                )
+              )
+            )
+          )
+        ),
+        List(
+          ("Cons", NameBind),
+          ("Nil", NameBind),
+          ("List", NameBind)
+        )
+      ) ==> (List(
+        ("map", NameBind),
+        ("Cons", NameBind),
+        ("Nil", NameBind),
+        ("List", NameBind)
+      ),
+      List(
+        Bind(
+          "map",
+          TermAbbBind(
+            TermTAbs(
+              "A",
+              TermTAbs(
+                "B",
+                TermFix(
+                  TermAbs(
+                    "^map",
+                    TypeArrow(
+                      TypeApp(TypeVar(4, 5), TypeVar(1, 5)),
+                      TypeArrow(
+                        TypeArrow(TypeVar(1, 5), TypeVar(0, 5)),
+                        TypeApp(TypeVar(4, 5), TypeVar(0, 5))
+                      )
+                    ),
+                    TermAbs(
+                      "l",
+                      TypeApp(TypeVar(5, 6), TypeVar(2, 6)),
+                      TermAbs(
+                        "f",
+                        TypeArrow(TypeVar(3, 7), TypeVar(2, 7)),
+                        TermLet(
+                          "iter",
+                          TermFix(
+                            TermAbs(
+                              "^iter",
+                              TypeArrow(
+                                TypeApp(TypeVar(7, 8), TypeVar(3, 8)),
+                                TypeArrow(
+                                  TypeApp(TypeVar(7, 8), TypeVar(4, 8)),
+                                  TypeApp(TypeVar(7, 8), TypeVar(3, 8))
+                                )
+                              ),
+                              TermClosure(
+                                "acc",
+                                Some(TypeApp(TypeVar(8, 9), TypeVar(4, 9))),
+                                TermClosure(
+                                  "l",
+                                  Some(
+                                    TypeApp(TypeVar(9, 10), TypeVar(6, 10))
+                                  ),
+                                  TermMatch(
+                                    TermVar(0, 11),
+                                    List(
+                                      (
+                                        PatternNode("Nil", List()),
+                                        TermVar(1, 11)
+                                      ),
+                                      (
+                                        PatternNode("Cons", List("h", "t")),
+                                        TermApp(
+                                          TermApp(
+                                            TermVar(4, 13),
+                                            TermApp(
+                                              TermApp(
+                                                TermTApp(
+                                                  TermVar(10, 13),
+                                                  TypeVar(8, 13)
+                                                ),
+                                                TermApp(
+                                                  TermVar(5, 13),
+                                                  TermVar(1, 13)
+                                                )
+                                              ),
+                                              TermVar(3, 13)
+                                            )
+                                          ),
+                                          TermVar(0, 13)
+                                        )
+                                      )
+                                    )
+                                  )
+                                )
+                              )
+                            )
+                          ),
+                          TermApp(
+                            TermApp(
+                              TermVar(0, 9),
+                              TermTApp(TermVar(7, 9), TypeVar(4, 9))
+                            ),
+                            TermVar(2, 9)
+                          )
+                        ),
+                        Some(TypeApp(TypeVar(8, 9), TypeVar(4, 9)))
+                      )
+                    )
+                  )
                 )
               )
             )

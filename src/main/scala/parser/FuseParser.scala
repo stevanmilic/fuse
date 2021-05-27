@@ -129,19 +129,20 @@ class FuseParser(val input: ParserInput) extends FuseTypesParser {
 
   def FuncSig = {
     rule {
-      "def" ~ Id ~ TypeParamClause.? ~ "(" ~ Params.? ~ ")" ~ "->" ~ Type ~> FFuncSig
+      "fun" ~ Id ~ TypeParamClause.? ~ "(" ~ Params.? ~ ")" ~ "->" ~ Type ~> FFuncSig
     }
   }
 
   def FuncDecl = {
     def BlockExpr = rule { runSubParser(new FuseExpressionParser(_).BlockExpr) }
     rule {
-      FuncSig ~ ":" ~ BlockExpr ~> FFuncDecl
+      FuncSig ~ BlockExpr ~> FFuncDecl
     }
   }
 
   def TraitDecl = {
-    val TraitFunc = () => rule { FuncDecl ~> (Left(_)) | FuncSig ~> (Right(_)) }
+    val TraitFunc = () =>
+      rule { FuncSig ~ ";" ~> (Right(_)) | FuncDecl ~> (Left(_)) }
     rule {
       "trait" ~ Id ~ TypeParamClause.? ~ ":" ~ oneOrMoreWithIndent(TraitFunc) ~>
         FTraitDecl
