@@ -163,16 +163,18 @@ object Desugar {
           })
         } yield TermMatch(me, mc.flatten)
       // TODO: Add desugar for record access -> TermProj (term projection).
-      case FAbs(bindings, expr) =>
+      case FAbs(bindings, Some(rType), expr) =>
         letVariable match {
-          case Some((f, Some(fType))) =>
+          case Some((f, _)) =>
             val closure = withClosure(bindings.toList, toTermExpr(expr.toList))
             Context.run(
-              withFixCombinator(f, bindings.map(_.t.get).toList, fType, closure)
+              withFixCombinator(f, bindings.map(_.t.get).toList, rType, closure)
             )
           case _ =>
             withClosure(bindings.toList, toTermExpr(expr.toList))
         }
+      case FAbs(bindings, _, expr) =>
+        withClosure(bindings.toList, toTermExpr(expr.toList))
       case FMultiplication(i1, i2) =>
         toTermOperator("&multiply", i1, i2)
       // TODO: Add other operators.

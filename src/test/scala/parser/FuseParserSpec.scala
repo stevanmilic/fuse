@@ -482,7 +482,7 @@ object FuseParserSpec extends TestSuite {
     }
     test("parse tail func definition with generics") {
       parse(
-        "fun map[A, B](l: List[A], f: A -> B) -> List[B]\n let iter: List[B] = (acc: List[B], l: List[A]) => {\n  match l:\n   Nil => acc\n   Cons(h, t) => iter(Cons[B](f(h), acc), t)\n  }\n iter(Nil[B](), l)"
+        "fun map[A, B](l: List[A], f: A -> B) -> List[B]\n let iter = (acc: List[B], l: List[A]) -> List[B] => {\n  match l:\n   Nil => acc\n   Cons(h, t) => iter(Cons[B](f(h), acc), t)\n  }\n iter(Nil[B](), l)"
       ) ==> Seq(
         FFuncDecl(
           FFuncSig(
@@ -516,12 +516,7 @@ object FuseParserSpec extends TestSuite {
           Seq(
             FLetExpr(
               FIdentifier("iter"),
-              Some(
-                FSimpleType(
-                  FIdentifier("List"),
-                  Some(Seq(FSimpleType(FIdentifier("B"))))
-                )
-              ),
+              None,
               Seq(
                 FAbs(
                   Seq(
@@ -542,6 +537,12 @@ object FuseParserSpec extends TestSuite {
                           Some(Seq(FSimpleType(FIdentifier("A"))))
                         )
                       )
+                    )
+                  ),
+                  Some(
+                    FSimpleType(
+                      FIdentifier("List"),
+                      Some(Seq(FSimpleType(FIdentifier("B"))))
                     )
                   ),
                   Seq(

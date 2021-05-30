@@ -936,7 +936,6 @@ object TypeCheckerSpec extends TestSuite {
                                                 TermApp(
                                                   TermTApp(
                                                     TermVar(10, 13),
-                                                    // TODO: Check if correct type var is set.
                                                     TypeVar(8, 13)
                                                   ),
                                                   TermApp(
@@ -974,7 +973,51 @@ object TypeCheckerSpec extends TestSuite {
             )
           )
         )
-      ) ==> Right(List())
+      ) ==> Right(
+        List(
+          ("List", Left(KindArrow(KindStar, KindStar))),
+          (
+            "Nil",
+            Right(TypeAll("A", KindStar, TypeApp(TypeVar(1, 2), TypeVar(0, 2))))
+          ),
+          (
+            "Cons",
+            Right(
+              TypeAll(
+                "A",
+                KindStar,
+                TypeArrow(
+                  TypeVar(0, 3),
+                  TypeArrow(
+                    TypeApp(TypeVar(2, 3), TypeVar(0, 3)),
+                    TypeApp(TypeVar(2, 3), TypeVar(0, 3))
+                  )
+                )
+              )
+            )
+          ),
+          (
+            "map",
+            Right(
+              TypeAll(
+                "A",
+                KindStar,
+                TypeAll(
+                  "B",
+                  KindStar,
+                  TypeArrow(
+                    TypeApp(TypeVar(4, 5), TypeVar(1, 5)),
+                    TypeArrow(
+                      TypeArrow(TypeVar(1, 5), TypeVar(0, 5)),
+                      TypeApp(TypeVar(4, 5), TypeVar(0, 5))
+                    )
+                  )
+                )
+              )
+            )
+          )
+        )
+      )
     }
     test("type check function with let expression") {
       typeCheck(

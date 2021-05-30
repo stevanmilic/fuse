@@ -153,6 +153,7 @@ object FuseExpressionSpec extends TestSuite {
             Seq(
               FAbs(
                 Seq(FBinding(FIdentifier("a"))),
+                None,
                 Seq(
                   FAddition(
                     FVar("a"),
@@ -177,6 +178,7 @@ object FuseExpressionSpec extends TestSuite {
             Seq(
               FAbs(
                 Seq(FBinding(FIdentifier("a"))),
+                None,
                 Seq(
                   FAddition(
                     FVar("a"),
@@ -207,6 +209,7 @@ object FuseExpressionSpec extends TestSuite {
             Seq(
               FAbs(
                 Seq(FBinding(FIdentifier("x"))),
+                None,
                 Seq(
                   FAddition(
                     FVar("x"),
@@ -244,6 +247,7 @@ object FuseExpressionSpec extends TestSuite {
           FBinding(FIdentifier("a")),
           FBinding(FIdentifier("b"))
         ),
+        None,
         Seq(
           FAddition(
             FVar("a"),
@@ -259,6 +263,7 @@ object FuseExpressionSpec extends TestSuite {
           FBinding(FIdentifier("g")),
           FBinding(FIdentifier("v"))
         ),
+        None,
         Seq(
           FLetExpr(
             FIdentifier("fv"),
@@ -282,9 +287,11 @@ object FuseExpressionSpec extends TestSuite {
     test("parse nested lambda expression") {
       parse("(a) => (b) => a + b") ==> FAbs(
         Seq(FBinding(FIdentifier("a"))),
+        None,
         Seq(
           FAbs(
             Seq(FBinding(FIdentifier("b"))),
+            None,
             Seq(
               FAddition(
                 FVar("a"),
@@ -296,13 +303,14 @@ object FuseExpressionSpec extends TestSuite {
       )
     }
     test("parse lambda expression with annotations") {
-      parse("(a: i32) => a + 1") ==> FAbs(
+      parse("(a: i32) -> i32 => a + 1") ==> FAbs(
         Seq(
           FBinding(
             FIdentifier("a"),
             Some(FSimpleType(FIdentifier("i32")))
           )
         ),
+        Some(FSimpleType(FIdentifier("i32"))),
         Seq(
           FAddition(
             FVar("a"),
@@ -314,6 +322,7 @@ object FuseExpressionSpec extends TestSuite {
     test("parse lambda expression with single param and no paranthesis") {
       parse("a => a + 1") ==> FAbs(
         Seq(FBinding(FIdentifier("a"))),
+        None,
         Seq(
           FAddition(
             FVar("a"),
@@ -329,6 +338,7 @@ object FuseExpressionSpec extends TestSuite {
         Seq(
           FAbs(
             Seq(FBinding(FIdentifier("a"))),
+            None,
             Seq(
               FAddition(FVar("a"), FInt(1))
             )

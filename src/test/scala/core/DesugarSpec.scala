@@ -1672,6 +1672,7 @@ object DesugarSpec extends TestSuite {
                       Some(FSimpleType(FIdentifier("i32")))
                     )
                   ),
+                  None,
                   Seq(
                     FAddition(FVar("x"), FInt(1))
                   )
@@ -1739,6 +1740,7 @@ object DesugarSpec extends TestSuite {
                       Some(FSimpleType(FIdentifier("i32")))
                     )
                   ),
+                  None,
                   Seq(
                     FAddition(FMultiplication(FVar("x"), FVar("y")), FVar("z"))
                   )
@@ -1827,6 +1829,7 @@ object DesugarSpec extends TestSuite {
                           Some(FSimpleType(FIdentifier("i32")))
                         )
                       ),
+                      None,
                       Seq(
                         FAddition(
                           FVar("a"),
@@ -1941,6 +1944,12 @@ object DesugarSpec extends TestSuite {
                           Some(Seq(FSimpleType(FIdentifier("A"))))
                         )
                       )
+                    )
+                  ),
+                  Some(
+                    FSimpleType(
+                      FIdentifier("List"),
+                      Some(Seq(FSimpleType(FIdentifier("B"))))
                     )
                   ),
                   Seq(

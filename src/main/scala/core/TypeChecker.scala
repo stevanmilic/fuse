@@ -192,7 +192,7 @@ object TypeChecker {
               Either.cond(
                 l.forall(identity),
                 caseExprTypes.head,
-                Error.MatchCasesTypeMismach
+                Error.MatchCasesTypeMismatch + caseExprTypes
               )
             )
         )
@@ -229,13 +229,6 @@ object TypeChecker {
     case TermUnit        => (TypeUnit: Type).pure[StateEither]
     case TermBuiltin(ty) => ty.pure[StateEither]
 
-  }
-
-  @tailrec
-  def findRootType(ty: Type): Type = ty match {
-    case v @ TypeVar(_, _) => v
-    case TypeApp(ty1, ty2) => findRootType(ty1)
-    case _                 => ty
   }
 
   def typeOfPattern(p: Pattern, expr: Type): StateEither[(Option[Type], Int)] =
@@ -281,19 +274,23 @@ object TypeChecker {
     fields.length == vars.length match {
       case true =>
         EitherT.right(
-          fields.traverse(f => Context.addBinding(f._1, VarBind(f._2)))
+          fields.zipWithIndex.traverse { case ((f, i)) =>
+            Context.addBinding(f._1, VarBind(typeShift(i, f._2)))
+          }
         )
       case false =>
         EitherT.leftT(Error.MatchPatternWrongVariables)
     }
 
-  def unfoldType(tyS: Type): ContextState[Type] =
+  def unfoldType(tyS: Type): ContextState[Type] = {
     simplifyType(tyS).map(_ match {
-      case TypeRec(_, _, tyT) => typeSubstituteTop(tyS, tyT)
-      case ty                 => ty
+      case TypeRec(_, _, tyT) =>
+        typeSubstituteTop(findRootType(tyS), tyT)
+      case ty => ty
     })
+  }
 
-  def isTypeEqual(ty1: Type, ty2: Type): ContextState[Boolean] = {
+  def isTypeEqual(ty1: Type, ty2: Type): ContextState[Boolean] = Context.run {
     val tys = for {
       ty1S <- simplifyType(ty1)
       ty2S <- simplifyType(ty2)
@@ -359,6 +356,13 @@ object TypeChecker {
     case TypeApp(TypeAbs(_, tyT12), tyT2) =>
       OptionT.some(typeSubstituteTop(tyT2, tyT12))
     case _ => OptionT.none
+  }
+
+  @tailrec
+  def findRootType(ty: Type): Type = ty match {
+    case v @ TypeVar(_, _) => v
+    case TypeApp(ty1, ty2) => findRootType(ty1)
+    case _                 => ty
   }
 
   def getTypeAbb(index: Int): StateOption[Type] =
@@ -450,7 +454,7 @@ object TypeChecker {
     val TAppNotAllType = "Universal type expected on type application."
     val MatchPatternTypeMismatch =
       "Pattern type is not the same as the type of the match expression."
-    val MatchCasesTypeMismach = "Type between cases don't match."
+    val MatchCasesTypeMismatch = "Type between cases don't match."
     def MatchPatternNotInVariant(p: String) =
       s"Pattern $p not found in type variant."
     def MatchPatternRecordNotFound(p: String) =
@@ -459,7 +463,7 @@ object TypeChecker {
       "Pattern has wrong number of variables for the type."
     val TagNotVariantType = "Expected variant type on the tag."
     def TagVariantFieldNotFound(f: String) =
-      s"Fied $f not found on the variant."
+      s"Field $f not found on the variant."
     val TagFieldTypeMismatch = "Field does not have an expected type."
 
     // Kind Errors

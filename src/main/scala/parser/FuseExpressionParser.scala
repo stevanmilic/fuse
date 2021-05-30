@@ -13,7 +13,8 @@ object FuseExpressionParser {
       extends FExpr
 
   case class FBinding(i: FIdentifier, t: Option[FType] = None)
-  case class FAbs(params: Seq[FBinding], e: Seq[FExpr]) extends FExpr
+  case class FAbs(params: Seq[FBinding], t: Option[FType], e: Seq[FExpr])
+      extends FExpr
 
   sealed trait FPattern
   case class FIdentifierPattern(value: String, p: Option[FPattern] = None)
@@ -90,8 +91,9 @@ class FuseExpressionParser(val input: ParserInput) extends FuseTypesParser {
   def LambdaExpr = {
     def Binding = rule { Id ~ (":" ~ Type).? ~> FBinding }
     def Bindings = rule { '(' ~ Binding.*(",") ~ ')' }
+    def ReturnType = rule { wspStr("->") ~ Type }
     rule {
-      (Bindings | Id ~> (i => Seq(FBinding(i)))) ~ wspStr("=>") ~
+      (Bindings | Id ~> (i => Seq(FBinding(i)))) ~ ReturnType.? ~ wspStr("=>") ~
         InlineExpr ~> FAbs
     }
   }
