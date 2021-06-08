@@ -61,6 +61,29 @@ object Desugar {
         funcBind <- bindTermAbb(i, func)
       } yield List(funcBind)
     }
+    case FTypeFuncDecls(typeIdentifier, typ, functions) =>
+      val param = FParam(
+        FIdentifier("this"),
+        FSimpleType(
+          typeIdentifier,
+          Some(
+            typ
+              .getOrElse(Seq())
+              .map(tp => FSimpleType(FIdentifier(tp.i.value)))
+          )
+        )
+      )
+      val modifySignature = (sig: FFuncSig) =>
+        FFuncSig(
+          FIdentifier(s"!${sig.i.value}#${typeIdentifier.value}"),
+          typ.map2(sig.tp)((tp1, tp2) => tp1 ++ tp2),
+          sig.p.map(param +: _).orElse(Some(Seq(param))),
+          sig.r
+        )
+      functions.toList
+        .traverse(f => bind(FFuncDecl(modifySignature(f.sig), f.exprs)))
+        .map(_.flatten)
+
     case _ => throw new Exception("not supported decl")
   }
 
@@ -162,7 +185,11 @@ object Desugar {
             c.p.toList.traverse(p => Context.run(toMatchCase(p, exprList)))
           })
         } yield TermMatch(me, mc.flatten)
-      // TODO: Add desugar for record access -> TermProj (term projection).
+      case FProj(e, projections) =>
+        toTerm(e).map(t =>
+          projections.foldLeft(t)((terms, proj) => TermProj(terms, proj.value))
+        )
+
       case FAbs(bindings, Some(rType), expr) =>
         letVariable match {
           case Some((f, _)) =>

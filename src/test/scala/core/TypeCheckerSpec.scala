@@ -697,6 +697,61 @@ object TypeCheckerSpec extends TestSuite {
         )
       ) ==> Right(List(("zero_to_one", Right(TypeArrow(TypeInt, TypeInt)))))
     }
+    test("type check function with term projection") {
+      typeCheck(
+        List(
+          Bind(
+            "&add",
+            TermAbbBind(
+              TermBuiltin(TypeArrow(TypeInt, TypeArrow(TypeInt, TypeInt)))
+            )
+          ),
+          Bind(
+            "Point",
+            TypeAbbBind(
+              TypeRec(
+                "@Point",
+                KindStar,
+                TypeRecord(List(("x", TypeInt), ("y", TypeInt)))
+              )
+            )
+          ),
+          Bind(
+            "x_point_sum",
+            TermAbbBind(
+              TermFix(
+                TermAbs(
+                  "^x_point_sum",
+                  TypeArrow(TypeVar(0, 2), TypeArrow(TypeVar(0, 2), TypeInt)),
+                  TermAbs(
+                    "p1",
+                    TypeVar(1, 3),
+                    TermAbs(
+                      "p2",
+                      TypeVar(2, 4),
+                      TermApp(
+                        TermApp(TermVar(4, 5), TermProj(TermVar(1, 5), "x")),
+                        TermProj(TermVar(0, 5), "x")
+                      ),
+                      Some(TypeInt)
+                    )
+                  )
+                )
+              )
+            )
+          )
+        )
+      ) ==> Right(
+        List(
+          ("&add", Right(TypeArrow(TypeInt, TypeArrow(TypeInt, TypeInt)))),
+          ("Point", Left(KindStar)),
+          (
+            "x_point_sum",
+            Right(TypeArrow(TypeVar(0, 2), TypeArrow(TypeVar(0, 2), TypeInt)))
+          )
+        )
+      )
+    }
     test("type check function with match expression with with adt unfolding") {
       typeCheck(
         List(

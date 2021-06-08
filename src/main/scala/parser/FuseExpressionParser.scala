@@ -133,6 +133,8 @@ class FuseExpressionParser(val input: ParserInput) extends FuseTypesParser {
       def ArgumentList = rule { ArgumentExpr.+(",") }
       def Arguments = rule { "(" ~ ArgumentList.? ~ ")" }
       def TypeArguments = rule { "[" ~ Type.+(",") ~ "]" }
+      // TODO: Add a differentiation between attribute and method access
+      // (projection).
       rule {
         (Proj | PrimaryExpr) ~ TypeArguments.? ~ Arguments.+ ~> FApp
       }

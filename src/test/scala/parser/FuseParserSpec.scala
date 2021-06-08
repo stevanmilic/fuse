@@ -420,6 +420,37 @@ object FuseParserSpec extends TestSuite {
         )
       )
     }
+    test("parse function definition with record projection expressions") {
+      parse(
+        "fun x_point_sum(p1: Point, p2: Point) -> i32\n p1.x + p2.x"
+      ) ==> Seq(
+        FFuncDecl(
+          FFuncSig(
+            FIdentifier("x_point_sum"),
+            None,
+            Some(
+              Seq(
+                FParam(
+                  FIdentifier("p1"),
+                  FSimpleType(FIdentifier("Point"), None)
+                ),
+                FParam(
+                  FIdentifier("p2"),
+                  FSimpleType(FIdentifier("Point"), None)
+                )
+              )
+            ),
+            FSimpleType(FIdentifier("i32"), None)
+          ),
+          Seq(
+            FAddition(
+              FProj(FVar("p1"), Seq(FVar("x"))),
+              FProj(FVar("p2"), Seq(FVar("x")))
+            )
+          )
+        )
+      )
+    }
     test("parse recursive function definition") {
       parse(
         "fun fib(n: i32, a: i32, b: i32) -> i32\n match n:\n  0 => b\n  _ => fib(n - 1, b, a + b)"

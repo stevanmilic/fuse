@@ -1059,6 +1059,68 @@ object DesugarSpec extends TestSuite {
         )
       ))
     }
+    test("desugar function with record projection") {
+      desugar(
+        FFuncDecl(
+          FFuncSig(
+            FIdentifier("x_point_sum"),
+            None,
+            Some(
+              Seq(
+                FParam(
+                  FIdentifier("p1"),
+                  FSimpleType(FIdentifier("Point"), None)
+                ),
+                FParam(
+                  FIdentifier("p2"),
+                  FSimpleType(FIdentifier("Point"), None)
+                )
+              )
+            ),
+            FSimpleType(FIdentifier("i32"), None)
+          ),
+          Seq(
+            FAddition(
+              FProj(FVar("p1"), Seq(FVar("x"))),
+              FProj(FVar("p2"), Seq(FVar("x")))
+            )
+          )
+        ),
+        List(("Point", NameBind), ("&add", NameBind))
+      ) ==> (
+        List(
+          ("x_point_sum", NameBind),
+          ("Point", NameBind),
+          ("&add", NameBind)
+        ),
+        List(
+          Bind(
+            "x_point_sum",
+            TermAbbBind(
+              TermFix(
+                TermAbs(
+                  "^x_point_sum",
+                  TypeArrow(TypeVar(0, 2), TypeArrow(TypeVar(0, 2), TypeInt)),
+                  TermAbs(
+                    "p1",
+                    TypeVar(1, 3),
+                    TermAbs(
+                      "p2",
+                      TypeVar(2, 4),
+                      TermApp(
+                        TermApp(TermVar(4, 5), TermProj(TermVar(1, 5), "x")),
+                        TermProj(TermVar(0, 5), "x")
+                      ),
+                      Some(TypeInt)
+                    )
+                  )
+                )
+              )
+            )
+          )
+        )
+      )
+    }
     test("desugar function with variant data constructor") {
       desugar(
         FFuncDecl(

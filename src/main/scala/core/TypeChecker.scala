@@ -92,7 +92,7 @@ object TypeChecker {
         tyT1 <- pureTypeOf(ty)
         tyT1S <- EitherT.liftF(simplifyType(tyT1))
         fieldType <- tyT1S match {
-          case TypeRecord(fields) =>
+          case TypeRec(_, _, TypeRecord(fields)) =>
             EitherT.fromEither[ContextState](
               fields
                 .find { case (f, _) => f == label }
