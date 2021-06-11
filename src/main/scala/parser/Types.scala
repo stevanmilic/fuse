@@ -2,8 +2,8 @@ package parser
 
 import org.parboiled2._
 
-object FuseTypesParser {
-  import FuseLexicalParser._
+object Types {
+  import Identifiers._
 
   // Type Params
   case class FTypeParam(i: FIdentifier, defaultType: Option[FType] = None)
@@ -25,9 +25,8 @@ object FuseTypesParser {
 
 }
 
-abstract class FuseTypesParser extends FuseLexicalParser {
-  import FuseTypesParser._
-  import FuseLexicalParser._
+abstract class Types extends Identifiers {
+  import Types._
 
   // Type Definitions
   def TypeParam = rule { Id ~ (wspStr("=") ~ Type).? ~> FTypeParam }
@@ -53,8 +52,8 @@ abstract class FuseTypesParser extends FuseLexicalParser {
   def SimpleType = rule {
     Id ~ TypeArgs.? ~> FSimpleType
   }
-  def Types = rule { Type.+(",") }
-  def TypeArgs = rule { "[" ~ Types ~ "]" }
+  def TypeList = rule { Type.+(",") }
+  def TypeArgs = rule { "[" ~ TypeList ~ "]" }
 
   def Param = rule { Id ~ ":" ~ Type ~> FParam }
   def Params = rule { Param.+(",") }

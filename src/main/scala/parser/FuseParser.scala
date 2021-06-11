@@ -4,9 +4,9 @@ import org.parboiled2._
 import scala.util.Either
 
 object FuseParser {
-  import FuseLexicalParser._
-  import FuseTypesParser._
-  import FuseExpressionParser.FExpr
+  import Identifiers._
+  import Types._
+  import Expressions.FExpr
 
   sealed trait FDecl
 
@@ -75,11 +75,11 @@ object FuseParser {
 
 }
 
-class FuseParser(val input: ParserInput) extends FuseTypesParser {
+class FuseParser(val input: ParserInput) extends Types {
   import FuseParser._
-  import FuseLexicalParser._
-  import FuseTypesParser._
-  import FuseExpressionParser.FExpr
+  import Identifiers._
+  import Types._
+  import Expressions.FExpr
 
   def Module = rule { Decl.+('\n') ~ EOI }
   def Decl: Rule1[FDecl] = rule {
@@ -99,7 +99,7 @@ class FuseParser(val input: ParserInput) extends FuseTypesParser {
 
   def VariantTypeDecl = {
     def VariantTypeValueArgs = rule {
-      "(" ~ (Params ~> (Left(_)) | Types ~> (Right(_))) ~ ")"
+      "(" ~ (Params ~> (Left(_)) | TypeList ~> (Right(_))) ~ ")"
     }
     val VariantTypeValue = () =>
       rule { Id ~ VariantTypeValueArgs.? ~> FVariantTypeValue }
@@ -120,7 +120,7 @@ class FuseParser(val input: ParserInput) extends FuseTypesParser {
   }
 
   def TupleTypeDecl = rule {
-    TypeDecl ~ TypeParamClause.? ~ "(" ~ Types ~ ")" ~> FTupleTypeDecl
+    TypeDecl ~ TypeParamClause.? ~ "(" ~ TypeList ~ ")" ~> FTupleTypeDecl
   }
 
   def TypeAlias = rule {
@@ -134,7 +134,7 @@ class FuseParser(val input: ParserInput) extends FuseTypesParser {
   }
 
   def FuncDecl = {
-    def BlockExpr = rule { runSubParser(new FuseExpressionParser(_).BlockExpr) }
+    def BlockExpr = rule { runSubParser(new Expressions(_).BlockExpr) }
     rule {
       FuncSig ~ BlockExpr ~> FFuncDecl
     }
@@ -149,7 +149,8 @@ class FuseParser(val input: ParserInput) extends FuseTypesParser {
     }
   }
 
-  def ImplFuncDecls = oneOrMoreWithIndent(() => FuncDecl)
+  val TypeFunc = () => FuncDecl
+  def ImplFuncDecls = oneOrMoreWithIndent(TypeFunc)
   def TraitInstance = rule {
     "impl" ~ Id ~ TypeParamClause.? ~ wspStr("for") ~ Id ~ TypeParamClause.? ~
       ':' ~ ImplFuncDecls ~> FTraitInstance

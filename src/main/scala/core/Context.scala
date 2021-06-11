@@ -70,6 +70,21 @@ object Context {
         )
     })
 
+  def getMethodType(typeIdx: Int, methodName: String): StateEither[Type] = for {
+    typeName <- EitherT(
+      State.inspect { (ctx: Context) =>
+        indexToName(ctx, typeIdx).toRight("Type not found")
+      }
+    )
+    methodIdx <- EitherT(
+      State.inspect { (ctx: Context) =>
+        nameToIndex(ctx, Desugar.toMethodId(methodName, typeName))
+          .toRight(s"Method $methodName not found")
+      }
+    )
+    methodType <- getType(methodIdx)
+  } yield methodType
+
   def getBinding(idx: Int): StateEither[Binding] = EitherT(
     State.inspect { ctx =>
       ctx.lift(idx) match {

@@ -3,10 +3,10 @@ package core
 import cats.data.State
 import cats.implicits._
 import core.Context._
-import parser.FuseExpressionParser._
-import parser.FuseLexicalParser._
+import parser.Expressions._
+import parser.Identifiers._
 import parser.FuseParser._
-import parser.FuseTypesParser._
+import parser.Types._
 
 object Desugar {
 
@@ -61,13 +61,13 @@ object Desugar {
         funcBind <- bindTermAbb(i, func)
       } yield List(funcBind)
     }
-    case FTypeFuncDecls(typeIdentifier, typ, functions) =>
+    case FTypeFuncDecls(typeIdentifier, typeParams, functions) =>
       val param = FParam(
         FIdentifier("this"),
         FSimpleType(
           typeIdentifier,
           Some(
-            typ
+            typeParams
               .getOrElse(Seq())
               .map(tp => FSimpleType(FIdentifier(tp.i.value)))
           )
@@ -75,9 +75,9 @@ object Desugar {
       )
       val modifySignature = (sig: FFuncSig) =>
         FFuncSig(
-          FIdentifier(s"!${sig.i.value}#${typeIdentifier.value}"),
-          typ.map2(sig.tp)((tp1, tp2) => tp1 ++ tp2),
-          sig.p.map(param +: _).orElse(Some(Seq(param))),
+          FIdentifier(toMethodId(sig.i.value, typeIdentifier.value)),
+          typeParams.fold(sig.tp)(p => Some(sig.tp.fold(p)(p ++ _))),
+          Some(sig.p.fold(Seq(param))(param +: _)),
           sig.r
         )
       functions.toList
@@ -185,11 +185,23 @@ object Desugar {
             c.p.toList.traverse(p => Context.run(toMatchCase(p, exprList)))
           })
         } yield TermMatch(me, mc.flatten)
-      case FProj(e, projections) =>
-        toTerm(e).map(t =>
-          projections.foldLeft(t)((terms, proj) => TermProj(terms, proj.value))
-        )
-
+      case FProj(expr, projections) => totTermProj(expr, projections)
+      case FMethodApp(proj, typeArgs, args) =>
+        for {
+          termProj <- totTermProj(proj.e, proj.ids.tail)
+          methodProj = TermMethodProj(termProj, proj.ids.head.value)
+          typedTerm <- typeArgs
+            .getOrElse(Seq())
+            .toList
+            .traverse(toType(_))
+            .map(_.foldLeft(methodProj: Term)((term, ty) => TermTApp(term, ty)))
+          withImplicitThis = TermApp(typedTerm, methodProj.t)
+          computedTerm <- args.toList.flatten.flatten
+            .traverse(toTerm(_))
+            .map(
+              _.foldLeft(withImplicitThis)((term, arg) => TermApp(term, arg))
+            )
+        } yield computedTerm
       case FAbs(bindings, Some(rType), expr) =>
         letVariable match {
           case Some((f, _)) =>
@@ -209,6 +221,8 @@ object Desugar {
         toTermOperator("&add", i1, i2)
       case FSubtraction(i1, i2) =>
         toTermOperator("&sub", i1, i2)
+      case FEquality(i1, i2) =>
+        toTermOperator("&eq", i1, i2)
       case FVar(i) =>
         toTermVar(i).map(_ match {
           case Some(v) => v
@@ -221,6 +235,11 @@ object Desugar {
       case FString(s)   => State.pure(TermString(s))
       case _            => throw new Exception("not supported expr")
     }
+
+  def totTermProj(e: FInfixExpr, ids: Seq[FVar]): ContextState[Term] =
+    toTerm(e).map(t =>
+      ids.foldLeft(t)((terms, proj) => TermProj(terms, proj.value))
+    )
 
   def withClosure(
       params: List[FBinding],
@@ -474,6 +493,12 @@ object Desugar {
   // The record constructor has a prefix "%" that should be searched during
   // type checking when the record type is found in the application.
   def toRecordConstructorId(i: String) = s"%$i"
+
+  // The method type has a prefix "!" that should be searched during type
+  // checking when the projection is found for a variable. There's also a "#"
+  // separator that depicts the type name for the method.
+  def toMethodId(methodName: String, typeName: String) =
+    s"!${methodName}#${typeName}"
 
   // # Constructors # region_end
 

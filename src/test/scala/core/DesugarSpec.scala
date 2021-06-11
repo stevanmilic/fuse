@@ -2,10 +2,10 @@ package core
 
 import cats.data.State
 import core.Context._
-import parser.FuseExpressionParser._
-import parser.FuseLexicalParser._
+import parser.Expressions._
+import parser.Identifiers._
+import parser.Types._
 import parser.FuseParser._
-import parser.FuseTypesParser._
 import utest._
 
 object DesugarSpec extends TestSuite {
@@ -2201,7 +2201,379 @@ object DesugarSpec extends TestSuite {
         )
       ))
     }
-    test("desugar type func decls") {}
+    test("desugar type func decls") {
+      desugar(
+        FTypeFuncDecls(
+          FIdentifier("Point"),
+          None,
+          Seq(
+            FFuncDecl(
+              FFuncSig(
+                FIdentifier("x_diff"),
+                None,
+                Some(
+                  Seq(
+                    FParam(
+                      FIdentifier("other"),
+                      FSimpleType(FIdentifier("Point"), None)
+                    )
+                  )
+                ),
+                FSimpleType(FIdentifier("f32"), None)
+              ),
+              Seq(
+                FSubtraction(
+                  FProj(FVar("this"), Seq(FVar("x"))),
+                  FProj(FVar("other"), Seq(FVar("x")))
+                )
+              )
+            ),
+            FFuncDecl(
+              FFuncSig(
+                FIdentifier("orElse"),
+                Some(Seq(FTypeParam(FIdentifier("T"), None))),
+                Some(
+                  Seq(
+                    FParam(
+                      FIdentifier("t"),
+                      FSimpleType(FIdentifier("T"), None)
+                    )
+                  )
+                ),
+                FSimpleType(
+                  FIdentifier("Option"),
+                  Some(Seq(FSimpleType(FIdentifier("T"), None)))
+                )
+              ),
+              Seq(
+                FMatch(
+                  FEquality(FProj(FVar("this"), Seq(FVar("x"))), FInt(0)),
+                  Seq(
+                    FCase(Seq(FBool(true)), None, List(FVar("t"))),
+                    FCase(Seq(FBool(false)), None, List(FVar("None")))
+                  )
+                )
+              )
+            )
+          )
+        ),
+        List(
+          ("Point", NameBind),
+          ("Some", NameBind),
+          ("None", NameBind),
+          ("Option", NameBind),
+          ("&sub", NameBind),
+          ("&eq", NameBind)
+        )
+      ) ==>
+        (List(
+          ("!orElse#Point", NameBind),
+          ("!x_diff#Point", NameBind),
+          ("Point", NameBind),
+          ("Some", NameBind),
+          ("None", NameBind),
+          ("Option", NameBind),
+          ("&sub", NameBind),
+          ("&eq", NameBind)
+        ), List(
+          Bind(
+            "!x_diff#Point",
+            TermAbbBind(
+              TermFix(
+                TermAbs(
+                  "^!x_diff#Point",
+                  TypeArrow(TypeVar(0, 6), TypeArrow(TypeVar(0, 6), TypeFloat)),
+                  TermAbs(
+                    "this",
+                    TypeVar(1, 7),
+                    TermAbs(
+                      "other",
+                      TypeVar(2, 8),
+                      TermApp(
+                        TermApp(TermVar(7, 9), TermProj(TermVar(1, 9), "x")),
+                        TermProj(TermVar(0, 9), "x")
+                      ),
+                      Some(TypeFloat)
+                    )
+                  )
+                )
+              )
+            )
+          ),
+          Bind(
+            "!orElse#Point",
+            TermAbbBind(
+              TermTAbs(
+                "T",
+                TermFix(
+                  TermAbs(
+                    "^!orElse#Point",
+                    TypeArrow(
+                      TypeVar(2, 8),
+                      TypeArrow(
+                        TypeVar(0, 8),
+                        TypeApp(TypeVar(5, 8), TypeVar(0, 8))
+                      )
+                    ),
+                    TermAbs(
+                      "this",
+                      TypeVar(3, 9),
+                      TermAbs(
+                        "t",
+                        TypeVar(2, 10),
+                        TermMatch(
+                          TermApp(
+                            TermApp(
+                              TermVar(10, 11),
+                              TermProj(TermVar(1, 11), "x")
+                            ),
+                            TermInt(0)
+                          ),
+                          List(
+                            (TermTrue, TermVar(0, 11)),
+                            (TermFalse, TermVar(7, 11))
+                          )
+                        ),
+                        Some(TypeApp(TypeVar(8, 11), TypeVar(3, 11)))
+                      )
+                    )
+                  )
+                )
+              )
+            )
+          )
+        ))
+    }
+    test("desugar type func decls with type parameters") {
+      desugar(
+        FTypeFuncDecls(
+          FIdentifier("Option"),
+          Some(Seq(FTypeParam(FIdentifier("A"), None))),
+          Seq(
+            FFuncDecl(
+              FFuncSig(
+                FIdentifier("map"),
+                Some(Seq(FTypeParam(FIdentifier("B"), None))),
+                Some(
+                  Seq(
+                    FParam(
+                      FIdentifier("f"),
+                      FFuncType(
+                        List(FSimpleType(FIdentifier("A"), None)),
+                        FSimpleType(FIdentifier("B"), None)
+                      )
+                    )
+                  )
+                ),
+                FSimpleType(
+                  FIdentifier("Option"),
+                  Some(Seq(FSimpleType(FIdentifier("B"), None)))
+                )
+              ),
+              Seq(
+                FMatch(
+                  FVar("this"),
+                  Seq(
+                    FCase(
+                      Seq(
+                        FVariantOrRecordPattern(
+                          FIdentifier("Some"),
+                          Seq(FIdentifierPattern("a", None))
+                        )
+                      ),
+                      None,
+                      List(
+                        FApp(
+                          FVar("Some"),
+                          Some(Seq(FSimpleType(FIdentifier("B"), None))),
+                          Seq(
+                            Some(
+                              Seq(
+                                FApp(FVar("f"), None, Seq(Some(Seq(FVar("a")))))
+                              )
+                            )
+                          )
+                        )
+                      )
+                    ),
+                    FCase(
+                      Seq(FWildCardPattern),
+                      None,
+                      List(
+                        FApp(
+                          FVar("None"),
+                          Some(Seq(FSimpleType(FIdentifier("B"), None))),
+                          Seq(None)
+                        )
+                      )
+                    )
+                  )
+                )
+              )
+            )
+          )
+        ),
+        List(
+          ("Some", NameBind),
+          ("None", NameBind),
+          ("Option", NameBind)
+        ) // Built-in function.
+      ) ==> (List(
+        ("!map#Option", NameBind),
+        ("Some", NameBind),
+        ("None", NameBind),
+        ("Option", NameBind)
+      ), List(
+        Bind(
+          "!map#Option",
+          TermAbbBind(
+            TermTAbs(
+              "A",
+              TermTAbs(
+                "B",
+                TermFix(
+                  TermAbs(
+                    "^!map#Option",
+                    TypeArrow(
+                      TypeApp(TypeVar(4, 5), TypeVar(1, 5)),
+                      TypeArrow(
+                        TypeArrow(TypeVar(1, 5), TypeVar(0, 5)),
+                        TypeApp(TypeVar(4, 5), TypeVar(0, 5))
+                      )
+                    ),
+                    TermAbs(
+                      "this",
+                      TypeApp(TypeVar(5, 6), TypeVar(2, 6)),
+                      TermAbs(
+                        "f",
+                        TypeArrow(TypeVar(3, 7), TypeVar(2, 7)),
+                        TermMatch(
+                          TermVar(1, 8),
+                          List(
+                            (
+                              PatternNode("Some", List("a")),
+                              TermApp(
+                                TermTApp(TermVar(6, 9), TypeVar(4, 9)),
+                                TermApp(TermVar(1, 9), TermVar(0, 9))
+                              )
+                            ),
+                            (
+                              PatternDefault,
+                              TermTApp(TermVar(6, 8), TypeVar(3, 8))
+                            )
+                          )
+                        ),
+                        Some(TypeApp(TypeVar(7, 8), TypeVar(3, 8)))
+                      )
+                    )
+                  )
+                )
+              )
+            )
+          )
+        )
+      ))
+    }
+    test("desugar function with method expression") {
+      desugar(
+        FFuncDecl(
+          FFuncSig(
+            FIdentifier("incr"),
+            None,
+            Some(
+              Seq(
+                FParam(
+                  FIdentifier("v"),
+                  FSimpleType(
+                    FIdentifier("Option"),
+                    Some(Seq(FSimpleType(FIdentifier("i32"))))
+                  )
+                )
+              )
+            ),
+            FSimpleType(
+              FIdentifier("Option"),
+              Some(Seq(FSimpleType(FIdentifier("i32"))))
+            ),
+          ),
+          Seq(
+            FMethodApp(
+              FProj(FVar("v"), Vector(FVar("map"))),
+              Some(
+                Seq(
+                  FSimpleType(FIdentifier("i32"), None),
+                  FSimpleType(FIdentifier("i32"), None)
+                )
+              ),
+              Vector(
+                Some(
+                  Vector(
+                    FAbs(
+                      List(
+                        FBinding(
+                          FIdentifier("a"),
+                          Some(FSimpleType(FIdentifier("i32"), None))
+                        )
+                      ),
+                      None,
+                      List(FAddition(FVar("a"), FInt(1)))
+                    )
+                  )
+                )
+              )
+            )
+          )
+        ),
+        List(
+          ("&add", NameBind),
+          ("!map#Option", NameBind),
+          ("Some", NameBind),
+          ("None", NameBind),
+          ("Option", NameBind)
+        )
+      ) ==> (List(
+        ("incr", NameBind),
+        ("&add", NameBind),
+        ("!map#Option", NameBind),
+        ("Some", NameBind),
+        ("None", NameBind),
+        ("Option", NameBind)
+      ), List(
+        Bind(
+          "incr",
+          TermAbbBind(
+            TermFix(
+              TermAbs(
+                "^incr",
+                TypeArrow(
+                  TypeApp(TypeVar(4, 5), TypeInt),
+                  TypeApp(TypeVar(4, 5), TypeInt)
+                ),
+                TermAbs(
+                  "v",
+                  TypeApp(TypeVar(5, 6), TypeInt),
+                  TermApp(
+                    TermApp(
+                      TermTApp(
+                        TermTApp(TermMethodProj(TermVar(0,7), "map"), TypeInt),
+                        TypeInt
+                      ),
+                      TermVar(0, 7)
+                    ),
+                    TermClosure(
+                      "a",
+                      Some(TypeInt),
+                      TermApp(TermApp(TermVar(3, 8), TermVar(0, 8)), TermInt(1))
+                    )
+                  ),
+                  Some(TypeApp(TypeVar(7,8),TypeInt))
+                )
+              )
+            )
+          )
+        )
+      ))
+    }
     // TODO: Learn how to represent traits (type classes) in the lambda calculus.
     // test("desugar trait decl") {}
     // test("desugar trait instance decl") {}

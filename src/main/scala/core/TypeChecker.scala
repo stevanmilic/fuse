@@ -77,13 +77,13 @@ object TypeChecker {
                 Either.cond(
                   _,
                   tyT12,
-                  Error.AppParameterTypeMismatch + " " + tyT2 + " " + tyT11
+                  Error.AppParameterTypeMismatch + " " + tyT2 + " " + tyT11 + " " + tyT1
                 )
               )
             )
           case _ =>
             EitherT.leftT[ContextState, Type](
-              Error.AppNotArrowType + " " + tyT1
+              Error.AppNotArrowType + " " + tyT1S + " " + t1
             )
         }
       } yield ty
@@ -100,6 +100,16 @@ object TypeChecker {
                 .toRight(Error.ProjFieldNotFound(label))
             )
           case _ => EitherT.leftT[ContextState, Type](Error.ProjNotRecordType)
+        }
+      } yield fieldType
+    case TermMethodProj(ty, method) =>
+      for {
+        tyT1 <- pureTypeOf(ty)
+        tyT1S <- EitherT.liftF(simplifyType(tyT1))
+        fieldType <- tyT1S match {
+          case TypeRec(_, _, _) =>
+            Context.getMethodType(findRootTypeIndex(tyT1).get, method)
+          case _ => EitherT.leftT[ContextState, Type](Error.MethodProjNotDataType)
         }
       } yield fieldType
     case TermFix(t1) =>
@@ -144,6 +154,7 @@ object TypeChecker {
         k2 <- kindOf(ty2)
         ty1 <- pureTypeOf(t1)
         tyT1 <- EitherT.liftF(simplifyType(ty1))
+        _ <- EitherT.liftF(State.inspect((ctx: Context) => println(tyT1)))
         ty <- tyT1 match {
           case TypeAll(_, k1, tyT2) =>
             EitherT.fromEither[ContextState](
@@ -365,6 +376,13 @@ object TypeChecker {
     case _                 => ty
   }
 
+  @tailrec
+  def findRootTypeIndex(ty: Type): Option[Int] = ty match {
+    case TypeVar(index, _)  => Some(index)
+    case TypeApp(ty1, ty2) => findRootTypeIndex(ty1)
+    case _                 => None
+  }
+
   def getTypeAbb(index: Int): StateOption[Type] =
     Context
       .getBinding(index)
@@ -446,6 +464,7 @@ object TypeChecker {
     val AppNotArrowType = "Arrow type expected on application."
     def ProjFieldNotFound(f: String) = s"Field $f not found on the record."
     val ProjNotRecordType = "Expected record type."
+    val MethodProjNotDataType = "Expected data type."
     val FixWrongBodyType = "Type of body not compatible with the domain."
     val FixNotArrowType = "Arrow type expected for fix combinator."
     val FoldNotRecursiveType = "Recursive type expected on fold."

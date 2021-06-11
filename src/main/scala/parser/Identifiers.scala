@@ -2,7 +2,7 @@ package parser
 
 import org.parboiled2._
 
-object FuseLexicalParser {
+object Identifiers {
   sealed trait FToken
 
   case class FIdentifier(value: String) extends FToken
@@ -22,9 +22,9 @@ object FuseLexicalParser {
   }
 }
 
-abstract class FuseLexicalParser extends Parser {
+abstract class Identifiers extends Keywords {
   import CharPredicate.{AlphaNum}
-  import FuseLexicalParser._
+  import Identifiers._
 
   implicit def wspStrR(s: String): Rule0 = rule {
     str(s) ~ zeroOrMore(' ')

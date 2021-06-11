@@ -3,9 +3,9 @@ package parser
 import org.parboiled2._
 import scala.util.Either
 
-object FuseExpressionParser {
-  import FuseLexicalParser._
-  import FuseTypesParser._
+object Expressions {
+  import Identifiers._
+  import Types._
 
   sealed trait FExpr
 
@@ -54,6 +54,11 @@ object FuseExpressionParser {
       typeArguments: FTypeArguments = None,
       args: Seq[FArguments]
   ) extends FInfixExpr
+  case class FMethodApp(
+      e: FProj,
+      typeArguments: FTypeArguments = None,
+      args: Seq[FArguments]
+  ) extends FInfixExpr
 
   // Literals
   sealed trait FLiteral extends FInfixExpr with FPattern
@@ -63,9 +68,9 @@ object FuseExpressionParser {
   case class FString(s: String) extends FLiteral
 }
 
-class FuseExpressionParser(val input: ParserInput) extends FuseTypesParser {
-  import FuseExpressionParser._
-  import FuseLexicalParser._
+class Expressions(val input: ParserInput) extends Types {
+  import Expressions._
+  import Identifiers._
 
   def BlockExpr = oneOrMoreWithIndent(ExprVal)
   val ExprVal = () => Expr
@@ -128,21 +133,22 @@ class FuseExpressionParser(val input: ParserInput) extends FuseTypesParser {
       Literal | ExprId | wspStr("(") ~ InfixExpr ~ wspStr(")")
     }
 
-    def CallExpr = {
-      def ArgumentExpr = rule { LambdaExpr | InfixExpr }
-      def ArgumentList = rule { ArgumentExpr.+(",") }
-      def Arguments = rule { "(" ~ ArgumentList.? ~ ")" }
-      def TypeArguments = rule { "[" ~ Type.+(",") ~ "]" }
-      // TODO: Add a differentiation between attribute and method access
-      // (projection).
-      rule {
-        (Proj | PrimaryExpr) ~ TypeArguments.? ~ Arguments.+ ~> FApp
-      }
+    def ArgumentExpr = rule { LambdaExpr | InfixExpr }
+    def ArgumentList = rule { ArgumentExpr.+(",") }
+    def Arguments = rule { "(" ~ ArgumentList.? ~ ")" }
+    def TypeArguments = rule { "[" ~ Type.+(",") ~ "]" }
+
+    def CallExpr = rule {
+      PrimaryExpr ~ TypeArguments.? ~ Arguments.+ ~> FApp
+    }
+
+    def MethodExpr = rule {
+      Proj ~ TypeArguments.? ~ Arguments.+ ~> FMethodApp
     }
 
     def Proj = rule { PrimaryExpr ~ ('.' ~ ExprId).+ ~> FProj }
 
-    def UnaryExpr = rule { CallExpr | Proj | PrimaryExpr }
+    def UnaryExpr = rule { MethodExpr | CallExpr | Proj | PrimaryExpr }
 
     def MultiplicativeExpr = rule {
       UnaryExpr ~ (wspStr("*") ~ UnaryExpr ~> FMultiplication |
@@ -176,7 +182,9 @@ class FuseExpressionParser(val input: ParserInput) extends FuseTypesParser {
 
   // Literals
   def Literal: Rule1[FLiteral] = rule { Bool | Float | Int | String }
-  def Bool = rule { capture("true" | "false") ~> (s => FBool(s.toBoolean)) }
+  def Bool = rule {
+    capture("true" | "false") ~> (s => FBool(s.trim().toBoolean))
+  }
   def Float = rule {
     capture(DecimalInteger ~ '.' ~ CharPredicate.Digit.*) ~> (f =>
       FFloat(f.toFloat)
@@ -190,5 +198,5 @@ class FuseExpressionParser(val input: ParserInput) extends FuseTypesParser {
     str("\"") ~ capture(CharPredicate.All.*) ~ str("\"") ~> FString
   }
 
-  private def ExprId = rule { capture(IdentifierPart) ~> FVar }
+  private def ExprId = rule { capture(!Keyword ~ IdentifierPart) ~> FVar }
 }

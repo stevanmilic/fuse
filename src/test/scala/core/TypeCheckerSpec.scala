@@ -1281,6 +1281,209 @@ object TypeCheckerSpec extends TestSuite {
         )
       )
     }
+    test("type check function with method expression") {
+      typeCheck(
+        List(
+          Bind(
+            "Option",
+            TypeAbbBind(
+              TypeAbs(
+                "T",
+                TypeRec(
+                  "@Option",
+                  KindArrow(KindStar, KindStar),
+                  TypeVariant(
+                    List(
+                      ("None", TypeUnit),
+                      ("Some", TypeRecord(List(("1", TypeVar(1, 2)))))
+                    )
+                  )
+                )
+              )
+            )
+          ),
+          Bind(
+            "None",
+            TermAbbBind(
+              TermTAbs(
+                "T",
+                TermApp(
+                  TermFold(TypeApp(TypeVar(1, 2), TypeVar(0, 2))),
+                  TermTag(
+                    "None",
+                    TermUnit,
+                    TypeApp(TypeVar(1, 2), TypeVar(0, 2))
+                  )
+                )
+              )
+            )
+          ),
+          Bind(
+            "Some",
+            TermAbbBind(
+              TermTAbs(
+                "T",
+                TermAbs(
+                  "#1",
+                  TypeVar(0, 3),
+                  TermApp(
+                    TermFold(TypeApp(TypeVar(3, 4), TypeVar(1, 4))),
+                    TermTag(
+                      "Some",
+                      TermRecord(List(("1", TermVar(0, 4)))),
+                      TypeApp(TypeVar(3, 4), TypeVar(1, 4))
+                    )
+                  )
+                )
+              )
+            )
+          ),
+          Bind(
+            "!map#Option",
+            TermAbbBind(
+              TermTAbs(
+                "A",
+                TermTAbs(
+                  "B",
+                  TermFix(
+                    TermAbs(
+                      "^!map#Option",
+                      TypeArrow(
+                        TypeApp(TypeVar(4, 5), TypeVar(1, 5)),
+                        TypeArrow(
+                          TypeArrow(TypeVar(1, 5), TypeVar(0, 5)),
+                          TypeApp(TypeVar(4, 5), TypeVar(0, 5))
+                        )
+                      ),
+                      TermAbs(
+                        "this",
+                        TypeApp(TypeVar(5, 6), TypeVar(2, 6)),
+                        TermAbs(
+                          "f",
+                          TypeArrow(TypeVar(3, 7), TypeVar(2, 7)),
+                          TermMatch(
+                            TermVar(1, 8),
+                            List(
+                              (
+                                PatternNode("Some", List("a")),
+                                TermApp(
+                                  TermTApp(TermVar(6, 9), TypeVar(4, 9)),
+                                  TermApp(TermVar(1, 9), TermVar(0, 9))
+                                )
+                              ),
+                              (
+                                PatternDefault,
+                                TermTApp(TermVar(6, 8), TypeVar(3, 8))
+                              )
+                            )
+                          ),
+                          Some(TypeApp(TypeVar(7, 8), TypeVar(3, 8)))
+                        )
+                      )
+                    )
+                  )
+                )
+              )
+            )
+          ),
+          Bind(
+            "&add",
+            TermAbbBind(
+              TermBuiltin(TypeArrow(TypeInt, TypeArrow(TypeInt, TypeInt)))
+            )
+          ),
+          Bind(
+            "incr",
+            TermAbbBind(
+              TermFix(
+                TermAbs(
+                  "^incr",
+                  TypeArrow(
+                    TypeApp(TypeVar(4, 5), TypeInt),
+                    TypeApp(TypeVar(4, 5), TypeInt)
+                  ),
+                  TermAbs(
+                    "v",
+                    TypeApp(TypeVar(5, 6), TypeInt),
+                    TermApp(
+                      TermApp(
+                        TermTApp(
+                          TermTApp(
+                            TermMethodProj(TermVar(0, 7), "map"),
+                            TypeInt
+                          ),
+                          TypeInt
+                        ),
+                        TermVar(0, 7)
+                      ),
+                      TermClosure(
+                        "a",
+                        Some(TypeInt),
+                        TermApp(
+                          TermApp(TermVar(3, 8), TermVar(0, 8)),
+                          TermInt(1)
+                        )
+                      )
+                    ),
+                    Some(TypeApp(TypeVar(7, 8), TypeInt))
+                  ),
+                  None
+                )
+              ),
+              None
+            )
+          )
+        )
+      ) ==> Right(
+        List(
+          ("Option", Left(KindArrow(KindStar, KindStar))),
+          (
+            "None",
+            Right(TypeAll("T", KindStar, TypeApp(TypeVar(1, 2), TypeVar(0, 2))))
+          ),
+          (
+            "Some",
+            Right(
+              TypeAll(
+                "T",
+                KindStar,
+                TypeArrow(TypeVar(0, 3), TypeApp(TypeVar(2, 3), TypeVar(0, 3)))
+              )
+            )
+          ),
+          (
+            "!map#Option",
+            Right(
+              TypeAll(
+                "A",
+                KindStar,
+                TypeAll(
+                  "B",
+                  KindStar,
+                  TypeArrow(
+                    TypeApp(TypeVar(4, 5), TypeVar(1, 5)),
+                    TypeArrow(
+                      TypeArrow(TypeVar(1, 5), TypeVar(0, 5)),
+                      TypeApp(TypeVar(4, 5), TypeVar(0, 5))
+                    )
+                  )
+                )
+              )
+            )
+          ),
+          ("&add", Right(TypeArrow(TypeInt, TypeArrow(TypeInt, TypeInt)))),
+          (
+            "incr",
+            Right(
+              TypeArrow(
+                TypeApp(TypeVar(4, 5), TypeInt),
+                TypeApp(TypeVar(4, 5), TypeInt)
+              )
+            )
+          )
+        )
+      )
+    }
   }
 
   def typeCheck(

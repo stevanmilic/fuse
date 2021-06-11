@@ -34,6 +34,7 @@ case class TermApp(f: Term, v: Term) extends Term
 case class TermMatch(t: Term, c: List[(Pattern, Term)]) extends Term
 case class TermLet(i: String, t1: Term, t2: Term) extends Term
 case class TermProj(t: Term, i: String) extends Term
+case class TermMethodProj(t: Term, i: String) extends Term
 // ADT
 case class TermRecord(v: List[(String, Term)]) extends Term
 case class TermTag(i: String, t: Term, typ: Type) extends Term

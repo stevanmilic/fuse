@@ -6,9 +6,9 @@ import org.parboiled2._
 
 object FuseParserSpec extends TestSuite {
   import FuseParser._
-  import FuseLexicalParser._
-  import FuseTypesParser._
-  import FuseExpressionParser._
+  import Identifiers._
+  import Types._
+  import Expressions._
 
   val tests = Tests {
     test("parse primitive type") {
@@ -386,35 +386,55 @@ object FuseParserSpec extends TestSuite {
         )
       )
     }
-    test("parse function definition with call expressions") {
+    test("parse function definition with method expression") {
       parse(
-        "fun sum_list(l: List[i32]) -> i32\n l.fold_left(0)(sum)"
+        "fun incr(v: Option[i32]) -> Option[i32]\n v.map[i32, i32]((a: i32) => a + 1)"
       ) ==> Seq(
         FFuncDecl(
           FFuncSig(
-            FIdentifier("sum_list"),
+            FIdentifier("incr"),
             None,
             Some(
               Seq(
                 FParam(
-                  FIdentifier("l"),
+                  FIdentifier("v"),
                   FSimpleType(
-                    FIdentifier("List"),
+                    FIdentifier("Option"),
                     Some(Seq(FSimpleType(FIdentifier("i32"))))
                   )
                 )
               )
             ),
-            FSimpleType(FIdentifier("i32"), None)
+            FSimpleType(
+              FIdentifier("Option"),
+              Some(Seq(FSimpleType(FIdentifier("i32"))))
+            ),
           ),
           Seq(
-            FApp(
-              FProj(
-                FVar("l"),
-                Seq(FVar("fold_left"))
+            FMethodApp(
+              FProj(FVar("v"), Vector(FVar("map"))),
+              Some(
+                Seq(
+                  FSimpleType(FIdentifier("i32"), None),
+                  FSimpleType(FIdentifier("i32"), None)
+                )
               ),
-              None,
-              Seq(Some(Seq((FInt(0)))), Some(Seq(FVar("sum"))))
+              Vector(
+                Some(
+                  Vector(
+                    FAbs(
+                      List(
+                        FBinding(
+                          FIdentifier("a"),
+                          Some(FSimpleType(FIdentifier("i32"), None))
+                        )
+                      ),
+                      None,
+                      List(FAddition(FVar("a"), FInt(1)))
+                    )
+                  )
+                )
+              )
             )
           )
         )
@@ -658,7 +678,7 @@ object FuseParserSpec extends TestSuite {
     }
     test("parse type implemantion") {
       parse(
-        "impl Point:\n fun x_diff(other: Point) -> f32\n  math.abs(this.x - other.x)"
+        "impl Point:\n fun x_diff(other: Point) -> f32\n  this.x - other.x\n fun orElse[T](t: T) -> Option[T]\n  match this.x == 0:\n   true => Some(t)\n   false => None"
       ) ==> Seq(
         FTypeFuncDecls(
           FIdentifier("Point"),
@@ -672,31 +692,122 @@ object FuseParserSpec extends TestSuite {
                   Seq(
                     FParam(
                       FIdentifier("other"),
-                      FSimpleType(FIdentifier("Point"))
+                      FSimpleType(FIdentifier("Point"), None)
                     )
                   )
                 ),
-                FSimpleType(FIdentifier("f32"))
+                FSimpleType(FIdentifier("f32"), None)
               ),
               Seq(
-                FApp(
-                  FProj(
-                    FVar("math"),
-                    Seq(FVar("abs"))
-                  ),
-                  None,
+                FSubtraction(
+                  FProj(FVar("this"), Seq(FVar("x"))),
+                  FProj(FVar("other"), Seq(FVar("x")))
+                )
+              )
+            ),
+            FFuncDecl(
+              FFuncSig(
+                FIdentifier("orElse"),
+                Some(Seq(FTypeParam(FIdentifier("T"), None))),
+                Some(
                   Seq(
-                    Some(
+                    FParam(
+                      FIdentifier("t"),
+                      FSimpleType(FIdentifier("T"), None)
+                    )
+                  )
+                ),
+                FSimpleType(
+                  FIdentifier("Option"),
+                  Some(Seq(FSimpleType(FIdentifier("T"), None)))
+                )
+              ),
+              Seq(
+                FMatch(
+                  FEquality(FProj(FVar("this"), Seq(FVar("x"))), FInt(0)),
+                  Seq(
+                    FCase(
+                      Seq(FBool(true)),
+                      None,
+                      List(
+                        FApp(
+                          FVar("Some"),
+                          None,
+                          Vector(Some(Vector(FVar("t"))))
+                        )
+                      )
+                    ),
+                    FCase(Seq(FBool(false)), None, List(FVar("None")))
+                  )
+                )
+              )
+            )
+          )
+        )
+      )
+    }
+    test("parse type implemantion with generic params") {
+      parse(
+        "impl Option[A]:\n fun map[B](f: A -> B) -> Option[B]\n  match this:\n   Some(a) => Some[B](f(a))\n   _ => None[B]()"
+      ) ==> Seq(
+        FTypeFuncDecls(
+          FIdentifier("Option"),
+          Some(Seq(FTypeParam(FIdentifier("A"), None))),
+          Seq(
+            FFuncDecl(
+              FFuncSig(
+                FIdentifier("map"),
+                Some(Seq(FTypeParam(FIdentifier("B"), None))),
+                Some(
+                  Seq(
+                    FParam(
+                      FIdentifier("f"),
+                      FFuncType(
+                        List(FSimpleType(FIdentifier("A"), None)),
+                        FSimpleType(FIdentifier("B"), None)
+                      )
+                    )
+                  )
+                ),
+                FSimpleType(
+                  FIdentifier("Option"),
+                  Some(Seq(FSimpleType(FIdentifier("B"), None)))
+                )
+              ),
+              Seq(
+                FMatch(
+                  FVar("this"),
+                  Seq(
+                    FCase(
                       Seq(
-                        FSubtraction(
-                          FProj(
-                            FVar("this"),
-                            Seq(FVar("x"))
-                          ),
-                          FProj(
-                            FVar("other"),
-                            Seq(FVar("x"))
+                        FVariantOrRecordPattern(
+                          FIdentifier("Some"),
+                          Seq(FIdentifierPattern("a", None))
+                        )
+                      ),
+                      None,
+                      List(
+                        FApp(
+                          FVar("Some"),
+                          Some(Seq(FSimpleType(FIdentifier("B"), None))),
+                          Seq(
+                            Some(
+                              Seq(
+                                FApp(FVar("f"), None, Seq(Some(Seq(FVar("a")))))
+                              )
+                            )
                           )
+                        )
+                      )
+                    ),
+                    FCase(
+                      Seq(FWildCardPattern),
+                      None,
+                      List(
+                        FApp(
+                          FVar("None"),
+                          Some(Seq(FSimpleType(FIdentifier("B"), None))),
+                          Seq(None)
                         )
                       )
                     )
