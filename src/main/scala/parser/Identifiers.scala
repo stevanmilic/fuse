@@ -2,6 +2,8 @@ package parser
 
 import org.parboiled2._
 
+import scala.language.implicitConversions
+
 object Identifiers {
   sealed trait FToken
 
@@ -36,9 +38,11 @@ abstract class Identifiers extends Keywords {
 
   def Id = rule { capture(IdentifierPart) ~> FIdentifier }
   def IdentifierPart = rule { (AlphaNum | '_').+ }
-  def NewLine = rule { ch('\n') }
+  def NewLine = rule(quiet('\r'.? ~ '\n'))
   def Indent = rule { capture(Spacing.+) ~> (s => FIndent(s.size)) }
   def Spacing = rule { ch('\t') | ch(' ') }
+  val WSCHAR = CharPredicate(" \t")
+  def WL = rule(quiet((WSCHAR | NewLine).*))
 
   // Meta rule that matches one or more indentent lines with the specified
   // rule. Accepts a `Function0` argument to prevent expansion of the passed

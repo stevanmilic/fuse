@@ -10,7 +10,7 @@ object Representation {
   def typeToString(t: Type): StateEither[String] = t match {
     case TypeVar(idx, n) =>
       EitherT(State.inspect { ctx =>
-        Context.indexToName(ctx, idx).toRight("Type variable not found.")
+        Context.indexToName(ctx, idx).toRight("Repr: Type variable not found.")
       })
     case TypeId(id) => id.pure[StateEither]
     case TypeAbs(typeVar, ty) =>

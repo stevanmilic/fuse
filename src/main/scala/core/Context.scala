@@ -22,7 +22,7 @@ object Context {
   val empty = List[(String, Binding)]()
   val WildcardName = "_"
 
-  def addName(n: String): State[Context, String] =
+  def addName(n: String): ContextState[String] =
     State { ctx => ((n, NameBind) :: ctx, n) }
 
   def addBinding(n: String, b: Binding): ContextState[String] =

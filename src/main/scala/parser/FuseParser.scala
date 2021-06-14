@@ -81,7 +81,7 @@ class FuseParser(val input: ParserInput) extends Types {
   import Types._
   import Expressions.FExpr
 
-  def Module = rule { Decl.+('\n') ~ EOI }
+  def Module = rule { Decl.+(NewLine.+) ~ WL ~ EOI }
   def Decl: Rule1[FDecl] = rule {
     RecordTypeDecl |
       VariantTypeDecl |

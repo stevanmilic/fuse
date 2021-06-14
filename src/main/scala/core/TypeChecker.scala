@@ -14,17 +14,13 @@ import scala.annotation.tailrec
 
 object TypeChecker {
 
-  def check(binds: ContextState[List[Bind]]): StateEither[List[Bind]] =
-    EitherT
-      .liftF(binds)
-      .flatMap(
-        _.traverse(bind =>
-          for {
-            binding <- checkBinding(bind.b)
-            id <- EitherT.liftF(addBinding(bind.i, binding))
-          } yield Bind(id, binding)
-        )
-      )
+  def check(binds: List[Bind]): StateEither[List[Bind]] =
+    binds.traverse(bind =>
+      for {
+        binding <- checkBinding(bind.b)
+        id <- EitherT.liftF(addBinding(bind.i, binding))
+      } yield Bind(id, binding)
+    )
 
   def checkBinding(b: Binding): StateEither[Binding] = b match {
     case NameBind           => EitherT.rightT(NameBind)
@@ -109,7 +105,8 @@ object TypeChecker {
         fieldType <- tyT1S match {
           case TypeRec(_, _, _) =>
             Context.getMethodType(findRootTypeIndex(tyT1).get, method)
-          case _ => EitherT.leftT[ContextState, Type](Error.MethodProjNotDataType)
+          case _ =>
+            EitherT.leftT[ContextState, Type](Error.MethodProjNotDataType)
         }
       } yield fieldType
     case TermFix(t1) =>
@@ -154,7 +151,6 @@ object TypeChecker {
         k2 <- kindOf(ty2)
         ty1 <- pureTypeOf(t1)
         tyT1 <- EitherT.liftF(simplifyType(ty1))
-        _ <- EitherT.liftF(State.inspect((ctx: Context) => println(tyT1)))
         ty <- tyT1 match {
           case TypeAll(_, k1, tyT2) =>
             EitherT.fromEither[ContextState](
@@ -172,7 +168,7 @@ object TypeChecker {
         // Get the type of the expression to match.
         ty1 <- pureTypeOf(exprTerm)
         exprType <- EitherT.liftF(unfoldType(ty1))
-        // Get the types of expresion for each case, with a check for pattern
+        // Get the types of expression for each case, with a check for pattern
         // type equivalence to the expression type.
         caseExprTypes <- cases.traverse { (v) =>
           Context.runE(
@@ -190,7 +186,7 @@ object TypeChecker {
                     )
                   )
                 )
-                .getOrElse(EitherT.rightT[ContextState, Error]())
+                .getOrElse(EitherT.pure[ContextState, Error](()))
               caseExprType <- pureTypeOf(v._2)
             } yield typeShift(-patternTypeInfo._2, caseExprType)
           )
@@ -378,7 +374,7 @@ object TypeChecker {
 
   @tailrec
   def findRootTypeIndex(ty: Type): Option[Int] = ty match {
-    case TypeVar(index, _)  => Some(index)
+    case TypeVar(index, _) => Some(index)
     case TypeApp(ty1, ty2) => findRootTypeIndex(ty1)
     case _                 => None
   }

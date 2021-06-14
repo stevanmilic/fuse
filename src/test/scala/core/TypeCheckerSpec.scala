@@ -1490,7 +1490,7 @@ object TypeCheckerSpec extends TestSuite {
       binds: List[Bind]
   ): Either[Error, List[(String, Either[Kind, Type])]] = {
     TypeChecker
-      .check(State.pure(binds))
+      .check(binds)
       .map(
         _.map(v =>
           v.b match {
