@@ -12,16 +12,23 @@ object Identifiers {
 
   def checkIndents(
       indents: Seq[FIndent],
-      parentIndent: Option[FIndent]
+      parentIndent: Option[FIndent],
+      equalToParent: Boolean
   ): Boolean = {
     val firstIndentSize = indents.head.size
     val sameSize = (indent: FIndent) => indent.size == firstIndentSize
     parentIndent match {
       case Some(FIndent(parentSize)) =>
-        firstIndentSize > parentSize && indents.forall(sameSize)
+        (firstIndentSize > parentSize || (equalToParent && firstIndentSize == parentSize)) && indents
+          .forall(sameSize)
       case None => indents.forall(sameSize)
     }
   }
+
+  def findParentIndent(elems: List[Any]): Option[FIndent] = elems.collectFirst {
+    case (i: FIndent) => i
+  }
+
 }
 
 abstract class Identifiers extends Keywords {
@@ -41,10 +48,9 @@ abstract class Identifiers extends Keywords {
   def NewLine = rule(quiet('\r'.? ~ '\n'))
   def Indent = rule { capture(Spacing.+) ~> (s => FIndent(s.size)) }
   def Spacing = rule { ch('\t') | ch(' ') }
-  val WSCHAR = CharPredicate(" \t")
-  def WL = rule(quiet((WSCHAR | NewLine).*))
+  def WL = rule(quiet((Spacing | NewLine).*))
 
-  // Meta rule that matches one or more indentent lines with the specified
+  // Meta rule that matches one or more indented lines with the specified
   // rule. Accepts a `Function0` argument to prevent expansion of the passed
   // rule.  It's best to pass the a `val` member to the function in order to
   // prevent the re-allocation during every execution of the meta rule.
@@ -53,19 +59,25 @@ abstract class Identifiers extends Keywords {
     (NewLine ~ Indent ~ r() ~> ((_, _))).+ ~> ((lines: Seq[(FIndent, T)]) => {
       val (indents, nodes) = lines.unzip
       validateIndents(indents) ~ push(nodes) | failX(
-        "correctly indendent block"
+        "correctly indented block"
       )
     })
   }
 
   // Checks if the indents are correctly aligned in respect to any indentation
   // in the parent block.
-  def validateIndents(indents: Seq[FIndent]): Rule0 = rule {
-    test(
-      checkIndents(
-        indents,
-        valueStack.toStream.reverse.collectFirst { case i @ FIndent(_) => i }
+  def validateIndents(
+      indents: Seq[FIndent],
+      equalToParent: Boolean = false
+  ): Rule0 =
+    rule {
+      test(
+        checkIndents(
+          indents,
+          findParentIndent(valueStack.toList.reverse),
+          equalToParent
+        )
       )
-    )
-  }
+    }
+
 }

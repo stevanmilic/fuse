@@ -82,8 +82,8 @@ class Expressions(val input: ParserInput) extends Types {
     def InlineBlockExpr = rule {
       '{' ~ BlockExpr ~ NewLine ~ Indent ~ '}' ~> (
         (e: Seq[FExpr], i: FIndent) => {
-          validateIndents(Seq(i)) ~ push(e) | failX(
-            "correctly indendent inline block"
+          validateIndents(Seq(i), true) ~ push(e) | failX(
+            "correctly indented inline block"
           )
         }
       )
@@ -148,6 +148,8 @@ class Expressions(val input: ParserInput) extends Types {
 
     def Proj = rule { PrimaryExpr ~ ('.' ~ ExprId).+ ~> FProj }
 
+    // TODO: Revisit unary expression, this should effectively be a primary
+    // expression.
     def UnaryExpr = rule { MethodExpr | CallExpr | Proj | PrimaryExpr }
 
     def MultiplicativeExpr = rule {

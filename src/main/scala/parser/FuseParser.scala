@@ -101,8 +101,10 @@ class FuseParser(val input: ParserInput) extends Types {
     def VariantTypeValueArgs = rule {
       "(" ~ (Params ~> (Left(_)) | TypeList ~> (Right(_))) ~ ")"
     }
+
     val VariantTypeValue = () =>
       rule { Id ~ VariantTypeValueArgs.? ~> FVariantTypeValue }
+
     rule {
       TypeDecl ~ TypeParamClause.? ~ ":" ~ oneOrMoreWithIndent(
         VariantTypeValue
