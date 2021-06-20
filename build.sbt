@@ -17,4 +17,6 @@ scalacOptions ++= Seq(
   "-language:postfixOps"
 )
 
+enablePlugins(NativeImagePlugin)
+
 testFrameworks += new TestFramework("utest.runner.Framework")
