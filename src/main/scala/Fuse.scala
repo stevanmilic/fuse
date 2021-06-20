@@ -2,39 +2,47 @@ package fuse
 
 import Compiler._
 import cats.effect._
-import cats.syntax.all._
+import cats.implicits._
+import cats.effect._
+import com.monovore.decline._
+import com.monovore.decline.effect._
 import core.Context.Error
 
 import java.io.File
 import java.io._
 
-object Fuse extends IOApp {
+case class CompileFile(fuseFile: String)
+
+object Fuse
+    extends CommandIOApp(
+      name = "fuse",
+      header = "Fuse is a tool for managing Fuse source code.",
+      version = "0.1"
+    ) {
 
   val FuseFileExtension = "fuse"
+  val FuseOutputExtension = "out"
 
-  override def run(args: List[String]): IO[ExitCode] =
-    for {
-      _ <-
-        if (args.length < 1 || args.length > 2)
-          IO.raiseError(new IllegalArgumentException("File not provided."))
-        else IO.unit
-      fileName = args(0)
-      _ <-
-        if (!fileName.endsWith(s".$FuseFileExtension"))
-          IO.raiseError(
-            new IllegalArgumentException(
-              "File provided doesn't have the fuse extension."
-            )
-          )
-        else IO.unit
-      program = new File(fileName)
-      output = new File(fileName.stripSuffix(FuseFileExtension) + "out")
-      result <- compileFile(program, output)
-      _ <- result match {
-        case Some(error) => IO.raiseError(new RuntimeException(error))
-        case None        => IO.unit
-      }
-    } yield ExitCode.Success
+  val fileOpts: Opts[String] = Opts.argument[String](metavar = "file")
+
+  val compileOpts: Opts[CompileFile] =
+    Opts.subcommand("build", "Compile fuse source code file.") {
+      (fileOpts).map(CompileFile)
+    }
+
+  override def main: Opts[IO[ExitCode]] =
+    compileOpts.map { case CompileFile(file) =>
+      val program = new File(file)
+      val output =
+        new File(file.stripSuffix(FuseFileExtension) + FuseOutputExtension)
+      for {
+        result <- compileFile(program, output)
+        exit_code <- result match {
+          case Some(error) => IO.println(error).map(_ => ExitCode.Error)
+          case None        => IO.pure(ExitCode.Success)
+        }
+      } yield exit_code
+    }
 
   def compileFile(origin: File, destination: File): IO[Option[Error]] = {
     val inIO: IO[InputStream] = IO(new FileInputStream(origin))

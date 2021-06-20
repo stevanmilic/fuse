@@ -4,8 +4,10 @@ name := "fuse"
 version := "0.1"
 
 libraryDependencies += "org.parboiled" %% "parboiled" % "2.2.1"
-libraryDependencies += "org.typelevel" %% "cats-core" % "2.1.1"
-libraryDependencies += "org.typelevel" %% "cats-effect" % "3.0.1" withSources() withJavadoc()
+libraryDependencies += "org.typelevel" %% "cats-core" % "2.6.1"
+libraryDependencies += "org.typelevel" %% "cats-effect" % "3.1.1" withSources() withJavadoc()
+libraryDependencies += "com.monovore" %% "decline" % "2.0.0"
+libraryDependencies += "com.monovore" %% "decline-effect" % "2.0.0"
 libraryDependencies += "com.lihaoyi" %% "utest" % "0.7.2" % "test"
 
 scalacOptions ++= Seq(
