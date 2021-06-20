@@ -316,7 +316,8 @@ object Desugar {
   def toTermVar(i: String): ContextState[Option[Term]] =
     State { ctx =>
       Context
-        .nameToIndex(ctx, i)
+        .nameToIndex(ctx, toRecordConstructorId(i))
+        .orElse(Context.nameToIndex(ctx, i))
         .orElse(Context.nameToIndex(ctx, toRecAbsId(i))) match {
         case Some(index) => (ctx, Some(TermVar(index, ctx.length)))
         case None        => (ctx, None)

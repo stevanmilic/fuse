@@ -1043,8 +1043,12 @@ object DesugarSpec extends TestSuite {
             )
           )
         ),
-        List(("Point", NameBind))
-      ) ==> (List(("zero_point", NameBind), ("Point", NameBind)),
+        List(("%Point", NameBind), ("Point", NameBind))
+      ) ==> (List(
+        ("zero_point", NameBind),
+        ("%Point", NameBind),
+        ("Point", NameBind),
+      ),
       List(
         Bind(
           "zero_point",
@@ -1052,8 +1056,8 @@ object DesugarSpec extends TestSuite {
             TermAbs(
               "_",
               TypeUnit,
-              TermApp(TermApp(TermVar(1, 2), TermInt(0)), TermInt(0)),
-              Some(TypeVar(1, 2))
+              TermApp(TermApp(TermVar(1, 3), TermInt(0)), TermInt(0)),
+              Some(TypeVar(2, 3))
             )
           )
         )
@@ -2494,7 +2498,7 @@ object DesugarSpec extends TestSuite {
             FSimpleType(
               FIdentifier("Option"),
               Some(Seq(FSimpleType(FIdentifier("i32"))))
-            ),
+            )
           ),
           Seq(
             FMethodApp(
@@ -2555,7 +2559,7 @@ object DesugarSpec extends TestSuite {
                   TermApp(
                     TermApp(
                       TermTApp(
-                        TermTApp(TermMethodProj(TermVar(0,7), "map"), TypeInt),
+                        TermTApp(TermMethodProj(TermVar(0, 7), "map"), TypeInt),
                         TypeInt
                       ),
                       TermVar(0, 7)
@@ -2566,7 +2570,7 @@ object DesugarSpec extends TestSuite {
                       TermApp(TermApp(TermVar(3, 8), TermVar(0, 8)), TermInt(1))
                     )
                   ),
-                  Some(TypeApp(TypeVar(7,8),TypeInt))
+                  Some(TypeApp(TypeVar(7, 8), TypeInt))
                 )
               )
             )

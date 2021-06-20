@@ -73,13 +73,13 @@ object TypeChecker {
                 Either.cond(
                   _,
                   tyT12,
-                  Error.AppParameterTypeMismatch + " " + tyT2 + " " + tyT11 + " " + tyT1
+                  Error.AppParameterTypeMismatch
                 )
               )
             )
           case _ =>
             EitherT.leftT[ContextState, Type](
-              Error.AppNotArrowType + " " + tyT1S + " " + t1
+              Error.AppNotArrowType
             )
         }
       } yield ty
@@ -199,7 +199,7 @@ object TypeChecker {
               Either.cond(
                 l.forall(identity),
                 caseExprTypes.head,
-                Error.MatchCasesTypeMismatch + caseExprTypes
+                Error.MatchCasesTypeMismatch
               )
             )
         )
