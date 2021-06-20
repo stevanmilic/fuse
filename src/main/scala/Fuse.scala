@@ -15,7 +15,7 @@ object Fuse extends IOApp {
   override def run(args: List[String]): IO[ExitCode] =
     for {
       _ <-
-        if (args.length < 1 && args.length > 2)
+        if (args.length < 1 || args.length > 2)
           IO.raiseError(new IllegalArgumentException("File not provided."))
         else IO.unit
       fileName = args(0)
