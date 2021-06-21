@@ -336,6 +336,19 @@ object FuseParserSpec extends TestSuite {
         )
       )
     }
+    test("parse function definition with constant string") {
+      parse("fun hello() -> str\n    \"Hello World\"") ==> Seq(
+        FFuncDecl(
+          FFuncSig(
+            FIdentifier("hello"),
+            None,
+            None,
+            FSimpleType(FIdentifier("str"), None)
+          ),
+          Seq(FString("Hello World"))
+        )
+      )
+    }
     test("parse function definition with additive expression") {
       parse("fun sum(x: i32, y: i32) -> i32\n    x + y") ==> Seq(
         FFuncDecl(

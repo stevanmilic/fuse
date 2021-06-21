@@ -10,6 +10,9 @@ object ExpressionsSpec extends TestSuite {
   import Expressions._
 
   val tests = Tests {
+    test("parse string") {
+      parse("\"Hello World\"") ==> FString("Hello World")
+    }
     test("parse additive expression with identifiers") {
       parse("x + y") ==> FAddition(
         FVar("x"),

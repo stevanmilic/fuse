@@ -196,8 +196,11 @@ class Expressions(val input: ParserInput) extends Types {
     '0' | (CharPredicate.Digit19 ~ CharPredicate.Digit.*)
   }
   def Int = rule { capture(CharPredicate.Digit.+) ~> (i => FInt(i.toInt)) }
-  def String = rule {
-    str("\"") ~ capture(CharPredicate.All.*) ~ str("\"") ~> FString
+  def String = {
+    def Raw = rule(!'\"' ~ ANY)
+    rule {
+      '"' ~ capture(Raw.*) ~ '"' ~> FString
+    }
   }
 
   private def ExprId = rule { capture(!Keyword ~ IdentifierPart) ~> FVar }
