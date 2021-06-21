@@ -144,6 +144,31 @@ object ExpressionsSpec extends TestSuite {
         )
       )
     }
+    test("parse call expressions with key-word in the function name") {
+      parse("match_or(x, y)") ==> FApp(
+        FVar("match_or"),
+        None,
+        Seq(
+          Some(Seq(FVar("x"), FVar("y")))
+        )
+      )
+    }
+    test("parse call expressions with complex primary expression") {
+      parse("Cons[i32](x, l).incr(2)") ==> FMethodApp(
+        FProj(
+          FApp(
+            FVar("Cons"),
+            Some(Seq(FSimpleType(FIdentifier("i32")))),
+            Seq(
+              Some(Seq(FVar("x"), FVar("l")))
+            )
+          ),
+          Seq(FVar("incr")),
+        ),
+        None,
+        Seq(Some(Seq(FInt(2)))),
+      )
+    }
     test("parse method application with lambda argument") {
       parse("l.map(a => a + 1)") ==> FMethodApp(
         FProj(

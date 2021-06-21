@@ -44,7 +44,7 @@ abstract class Identifiers extends Keywords {
   }
 
   def Id = rule { capture(IdentifierPart) ~> FIdentifier }
-  def IdentifierPart = rule { (AlphaNum | '_').+ }
+  def IdentifierPart = rule { AlphaNum_.+ }
   def NewLine = rule(quiet('\r'.? ~ '\n'))
   def Indent = rule { capture(Spacing.+) ~> (s => FIndent(s.size)) }
   def Spacing = rule { ch('\t') | ch(' ') }

@@ -129,7 +129,7 @@ class Expressions(val input: ParserInput) extends Types {
   }
 
   def InfixExpr: Rule1[FInfixExpr] = {
-    def PrimaryExpr = rule {
+    def SimpleExpr = rule {
       Literal | ExprId | wspStr("(") ~ InfixExpr ~ wspStr(")")
     }
 
@@ -139,23 +139,23 @@ class Expressions(val input: ParserInput) extends Types {
     def TypeArguments = rule { "[" ~ Type.+(",") ~ "]" }
 
     def CallExpr = rule {
-      PrimaryExpr ~ TypeArguments.? ~ Arguments.+ ~> FApp
+      SimpleExpr ~ TypeArguments.? ~ Arguments.+ ~> FApp
     }
 
     def MethodExpr = rule {
       Proj ~ TypeArguments.? ~ Arguments.+ ~> FMethodApp
     }
 
-    def Proj = rule { PrimaryExpr ~ ('.' ~ ExprId).+ ~> FProj }
+    def Proj = rule { (CallExpr | SimpleExpr) ~ ('.' ~ ExprId).+ ~> FProj }
 
-    // TODO: Revisit unary expression, this should effectively be a primary
-    // expression.
-    def UnaryExpr = rule { MethodExpr | CallExpr | Proj | PrimaryExpr }
+    def PrimaryExpr: Rule1[FInfixExpr] = rule {
+      MethodExpr | CallExpr | Proj | SimpleExpr
+    }
 
     def MultiplicativeExpr = rule {
-      UnaryExpr ~ (wspStr("*") ~ UnaryExpr ~> FMultiplication |
-        wspStr("/") ~ UnaryExpr ~> FDivision |
-        wspStr("%") ~ UnaryExpr ~> FModulo).*
+      PrimaryExpr ~ (wspStr("*") ~ PrimaryExpr ~> FMultiplication |
+        wspStr("/") ~ PrimaryExpr ~> FDivision |
+        wspStr("%") ~ PrimaryExpr ~> FModulo).*
     }
     def AdditiveExpr = rule {
       MultiplicativeExpr ~ (wspStr("+") ~ MultiplicativeExpr ~> FAddition |

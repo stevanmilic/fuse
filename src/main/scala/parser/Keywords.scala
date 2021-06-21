@@ -9,6 +9,10 @@ abstract class Keywords extends Parser {
 
   def Keyword = rule(AlphaKeyword)
 
+  val Underscore = CharPredicate('_')
+
+  val AlphaNum_ = AlphaNum ++ Underscore
+
   private def AlphaKeyword = rule {
     run {
       (cursorChar: @switch) match {
@@ -20,6 +24,6 @@ abstract class Keywords extends Parser {
         case '_' => ANY
         case _   => MISMATCH
       }
-    } ~ !AlphaNum
+    } ~ !AlphaNum_
   }
 }
