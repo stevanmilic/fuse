@@ -1,4 +1,4 @@
-Fuse is a statically type functional language.
+**Fuse** is a statically typed functional language.
 
 # Features
 
@@ -19,7 +19,7 @@ Fuse is a statically type functional language.
 
 # Working Example with Tree-Sitter
 
-![fuse](https://user-images.githubusercontent.com/6879030/126559316-0cbfbfe4-bdf3-421f-9abf-d1a2d2f86091.png)
+![fuse](https://user-images.githubusercontent.com/6879030/126560462-08a46755-9162-4ba3-900c-f5421cff1e4c.png)
 
 # ADTs (Algebraic Data Types)
 
@@ -28,7 +28,7 @@ Fuse is a statically type functional language.
 ```
 type bool:
     true
-	false
+    false
 ```
 
 ## Record (Product type)
@@ -63,10 +63,10 @@ type Data[T](Option[Map[str, T]])
 
 ```
 impl Option[T]:
-   fun is_some() -> bool
-	       match this:
-           Some(_) => True
-           None => False
+    fun is_some() -> bool
+        match this:
+            Some(_) => True
+            None => False
 
 impl Point:
     fun distance(other: Point) -> f32
@@ -121,7 +121,7 @@ let x = 2
 
 match x:
     1 => "one"
-	2 => "two"
+    2 => "two"
     _ => "whatever"
 
 let m = Some(5)
@@ -143,9 +143,9 @@ sum(5, 3)
 
 ```
 fun fib(n: i32, a: i32, b: i32) -> i32
-	match n:
-		0 => b
-		_ => fib(n - 1, b, a + b)
+    match n:
+        0 => b
+        _ => fib(n - 1, b, a + b)
 ```
 
 ## Lambda Functions
