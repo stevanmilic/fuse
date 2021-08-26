@@ -203,5 +203,6 @@ class Expressions(val input: ParserInput) extends Types {
     }
   }
 
+  // TODO: Not working in all the cases e.g. when applying function "type_of'.
   private def ExprId = rule { capture(!Keyword ~ IdentifierPart) ~> FVar }
 }

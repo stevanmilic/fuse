@@ -56,7 +56,7 @@ abstract class Identifiers extends Keywords {
   // prevent the re-allocation during every execution of the meta rule.
   // More info: https://github.com/sirthias/parboiled2#meta-rules
   def oneOrMoreWithIndent[T](r: () => Rule1[T]): Rule1[Seq[T]] = rule {
-    (NewLine ~ Indent ~ r() ~> ((_, _))).+ ~> ((lines: Seq[(FIndent, T)]) => {
+    (NewLine.+ ~ Indent ~ r() ~> ((_, _))).+ ~> ((lines: Seq[(FIndent, T)]) => {
       val (indents, nodes) = lines.unzip
       validateIndents(indents) ~ push(nodes) | failX(
         "correctly indented block"

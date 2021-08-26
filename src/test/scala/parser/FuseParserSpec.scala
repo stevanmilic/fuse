@@ -421,7 +421,7 @@ object FuseParserSpec extends TestSuite {
             FSimpleType(
               FIdentifier("Option"),
               Some(Seq(FSimpleType(FIdentifier("i32"))))
-            ),
+            )
           ),
           Seq(
             FMethodApp(
@@ -754,6 +754,36 @@ object FuseParserSpec extends TestSuite {
                   )
                 )
               )
+            )
+          )
+        )
+      )
+    }
+    test("parse type implemantion with methods divided by multiple lines") {
+      parse(
+        "impl Point:\n fun one() -> i32\n  1\n\n fun two() -> i32\n  2"
+      ) ==> Seq(
+        FTypeFuncDecls(
+          FIdentifier("Point"),
+          None,
+          Seq(
+            FFuncDecl(
+              FFuncSig(
+                FIdentifier("one"),
+                None,
+                None,
+                FSimpleType(FIdentifier("i32"), None)
+              ),
+              Vector(FInt(1))
+            ),
+            FFuncDecl(
+              FFuncSig(
+                FIdentifier("two"),
+                None,
+                None,
+                FSimpleType(FIdentifier("i32"), None)
+              ),
+              Vector(FInt(2))
             )
           )
         )
