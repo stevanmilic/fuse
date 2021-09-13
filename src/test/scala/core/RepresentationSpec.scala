@@ -73,6 +73,6 @@ object RepresentationSpec extends TestSuite {
     }
   }
 
-  def typeRepresentation(t: Type, c: Context = empty): Either[Error, String] =
-    typeToString(t).value.runA(c).value
+  def typeRepresentation(t: Type, c: Context = emptyContext): Either[Error, String] =
+    typeToString(t, true).value.runA(c).value
 }

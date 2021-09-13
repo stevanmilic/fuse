@@ -1,6 +1,7 @@
 package parser
 
 import org.parboiled2._
+import cats.Show
 
 import scala.language.implicitConversions
 
@@ -9,6 +10,20 @@ object Identifiers {
 
   case class FIdentifier(value: String) extends FToken
   case class FIndent(size: Int) extends FToken
+  case class Location(line: Int, column: Int)
+
+  sealed trait Info
+  case class FileInfo(
+      location: Location,
+      fileName: String
+  ) extends Info
+  case object UnknownInfo extends Info
+
+  implicit val showInfo: Show[Info] =
+    Show.show ( info => info match {
+      case FileInfo(location, fileName) => s"${fileName}: ${location.line}:${location.column}"
+      case UnknownInfo => "unknown location"
+    })
 
   def checkIndents(
       indents: Seq[FIndent],
@@ -42,6 +57,13 @@ abstract class Identifiers extends Keywords {
   def wspStr(s: String): Rule0 = rule {
     zeroOrMore(' ') ~ wspStrR(s)
   }
+
+  def loc: Location = {
+    val pos = Position(cursor, input)
+    Location(pos.line, pos.column)
+  }
+
+  def mark = rule { atomic("") ~> (() => loc) }
 
   def Id = rule { capture(IdentifierPart) ~> FIdentifier }
   def IdentifierPart = rule { AlphaNum_.+ }

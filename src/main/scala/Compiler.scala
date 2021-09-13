@@ -19,7 +19,7 @@ object Compiler {
   def compile(
       origin: InputStream,
       destination: OutputStream
-  ): IO[Option[Error]] =
+  ): IO[Option[String]] =
     for {
       code <- IO.blocking(origin.readAllBytes.map(_.toChar).mkString)
       result = process(code)
@@ -30,7 +30,7 @@ object Compiler {
       }
     } yield value
 
-  def process(code: String): Either[Error, String] = for {
+  def process(code: String): Either[String, String] = for {
     v <- parse(code)
     c1 = BuiltIn.Functions.map(b => (b.i, NameBind))
     d <- Right(desugar(v.toList, c1))
@@ -54,33 +54,33 @@ object Compiler {
 
   def typeCheck(
       binds: List[Bind]
-  ): Either[Error, List[Bind]] =
+  ): Either[String, List[Bind]] =
     TypeChecker
       .check(binds)
       .value
-      .runA(empty)
+      .runA(emptyContext)
       .value
 
   def typeRepresentation(
       types: List[Bind]
-  ): Either[Error, List[String]] =
+  ): Either[String, List[String]] =
     types
       .traverse(bind => {
         val repr = bind.b match {
           case TypeVarBind(k) =>
             Representation.kindToString(k).pure[StateEither]
-          case VarBind(ty) => Context.runE(Representation.typeToString(ty))
+          case VarBind(ty) =>
+            Context.runE(Representation.typeToString(ty, buildContext = true))
           case TypeAbbBind(_, Some(k)) =>
             Representation.kindToString(k).pure[StateEither]
           case TermAbbBind(_, Some(ty)) =>
-            Context.runE(Representation.typeToString(ty))
+            Context.runE(Representation.typeToString(ty, buildContext = true))
         }
         repr.map2(EitherT.liftF(addName(bind.i))) { case (repr, id) =>
           s"$id: $repr"
         }
       })
       .value
-      .runA(empty)
+      .runA(emptyContext)
       .value
-
 }

@@ -9,8 +9,11 @@ object Expressions {
 
   sealed trait FExpr
 
-  case class FLetExpr(i: FIdentifier, t: Option[FType], e: Seq[FExpr])
-      extends FExpr
+  case class FLetExpr(
+      i: FIdentifier,
+      t: Option[FType],
+      e: Seq[FExpr],
+  ) extends FExpr
 
   case class FBinding(i: FIdentifier, t: Option[FType] = None)
   case class FAbs(params: Seq[FBinding], t: Option[FType], e: Seq[FExpr])
@@ -23,7 +26,11 @@ object Expressions {
   case class FTuplePattern(s: Seq[FPattern]) extends FPattern
   case class FVariantOrRecordPattern(i: FIdentifier, s: Seq[FPattern])
       extends FPattern
-  case class FCase(p: Seq[FPattern], guard: Option[FInfixExpr], e: Seq[FExpr])
+  case class FCase(
+      p: Seq[FPattern],
+      guard: Option[FInfixExpr],
+      e: Seq[FExpr],
+  )
   case class FMatch(e: FInfixExpr, c: Seq[FCase]) extends FExpr
 
   sealed trait FInfixExpr extends FExpr

@@ -2583,7 +2583,7 @@ object DesugarSpec extends TestSuite {
     // test("desugar trait instance decl") {}
   }
 
-  def desugar(d: FDecl, ctx: Context = Context.empty): (Context, List[Bind]) = {
+  def desugar(d: FDecl, ctx: Context = Context.emptyContext): (Context, List[Bind]) = {
     Desugar.bind(d).run(ctx).value
   }
 }

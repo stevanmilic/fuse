@@ -1502,7 +1502,7 @@ object TypeCheckerSpec extends TestSuite {
         )
       )
       .value
-      .runA(empty)
+      .runA(emptyContext)
       .value
   }
 }

@@ -17,7 +17,7 @@
 - [ ] Add modules & imports
 - [ ] Implement Type Classes
 
-# Working Example with Tree-Sitter
+# Example with [Tree-Sitter](https://github.com/stevanmilic/tree-sitter-fuse)
 
 ![fuse](https://user-images.githubusercontent.com/6879030/126560462-08a46755-9162-4ba3-900c-f5421cff1e4c.png)
 

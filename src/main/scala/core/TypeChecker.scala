@@ -11,6 +11,8 @@ import parser.FuseParser._
 
 import scala.util._
 import scala.annotation.tailrec
+import parser.Identifiers.{UnknownInfo}
+import core.TypeErrorFormatter.formatError
 
 object TypeChecker {
 
@@ -40,9 +42,13 @@ object TypeChecker {
       for {
         _ <- checkKindStar(typeToAscribe)
         tyT1 <- pureTypeOf(t1)
-        t <- EitherT(
-          isTypeEqual(tyT1, typeToAscribe).map(
-            Either.cond(_, typeToAscribe, Error.AscribeWrongType)
+        t <- isTypeEqualWithTypeError(
+          tyT1,
+          typeToAscribe,
+          AscribeWrongTypeError(
+            UnknownInfo,
+            tyT1,
+            typeToAscribe
           )
         )
       } yield t
@@ -68,18 +74,21 @@ object TypeChecker {
         tyT1S <- EitherT.liftF(simplifyType(tyT1))
         ty <- tyT1S match {
           case TypeArrow(tyT11, tyT12) =>
-            EitherT(
-              isTypeEqual(tyT2, tyT11).map(
-                Either.cond(
-                  _,
-                  tyT12,
-                  Error.AppParameterTypeMismatch
-                )
+            isTypeEqualWithTypeError(
+              tyT2,
+              tyT11,
+              MismatchFunctionTypeError(
+                UnknownInfo,
+                tyT2,
+                tyT11
               )
-            )
+            ).map(_ => tyT12)
           case _ =>
-            EitherT.leftT[ContextState, Type](
-              Error.AppNotArrowType
+            formatError(
+              VariableNotFunctionTypeError(
+                UnknownInfo,
+                tyT1
+              )
             )
         }
       } yield ty
@@ -89,24 +98,47 @@ object TypeChecker {
         tyT1S <- EitherT.liftF(simplifyType(tyT1))
         fieldType <- tyT1S match {
           case TypeRec(_, _, TypeRecord(fields)) =>
-            EitherT.fromEither[ContextState](
-              fields
-                .find { case (f, _) => f == label }
-                .map(_._2)
-                .toRight(Error.ProjFieldNotFound(label))
-            )
-          case _ => EitherT.leftT[ContextState, Type](Error.ProjNotRecordType)
+            fields
+              .find { case (f, _) => f == label }
+              .map { case (_, ty) => ty.pure[StateEither] }
+              .getOrElse(
+                formatError(FieldNotFoundTypeError(UnknownInfo, tyT1, label))
+              )
+          case _ => formatError(NoFieldsOnTypeError(UnknownInfo, tyT1))
         }
       } yield fieldType
-    case TermMethodProj(ty, method) =>
+    case TermMethodProj(term, method) =>
       for {
-        tyT1 <- pureTypeOf(ty)
+        tyT1 <- pureTypeOf(term)
         tyT1S <- EitherT.liftF(simplifyType(tyT1))
-        fieldType <- tyT1S match {
-          case TypeRec(_, _, _) =>
-            Context.getMethodType(findRootTypeIndex(tyT1).get, method)
-          case _ =>
-            EitherT.leftT[ContextState, Type](Error.MethodProjNotDataType)
+        rootTypeIndexOption = findRootTypeIndex(tyT1)
+        fieldType <- (tyT1S, rootTypeIndexOption) match {
+          case (TypeRec(_, _, _), Some(rootTypeIndex)) =>
+            for {
+              optionName <- EitherT.liftF(
+                State.inspect { (ctx: Context) =>
+                  indexToName(ctx, rootTypeIndex)
+                }
+              )
+              typeName <- optionName match {
+                case Some(name) => name.pure[StateEither]
+                case None       => formatError(NotFoundTypeError(UnknownInfo))
+              }
+              methodOptionIdx <- EitherT.liftF(
+                State.inspect { (ctx: Context) =>
+                  nameToIndex(ctx, Desugar.toMethodId(method, typeName))
+                }
+              )
+              methodIdx <- methodOptionIdx match {
+                case Some(idx) => idx.pure[StateEither]
+                case None =>
+                  formatError(
+                    MethodNotFoundTypeError(UnknownInfo, tyT1, method)
+                  )
+              }
+              methodType <- getType(methodIdx)
+            } yield methodType
+          case _ => formatError(NoMethodsOnTypeError(UnknownInfo, tyT1S))
         }
       } yield fieldType
     case TermFix(t1) =>
@@ -115,12 +147,16 @@ object TypeChecker {
         tyT1S <- EitherT.liftF(simplifyType(tyT1))
         bodyType <- tyT1S match {
           case TypeArrow(tyT11, tyT12) =>
-            EitherT(
-              isTypeEqual(tyT12, tyT11).map(
-                Either.cond(_, tyT12, Error.FixWrongBodyType)
+            isTypeEqualWithTypeError(
+              tyT12,
+              tyT11,
+              WrongReturnTypeError(
+                UnknownInfo,
+                tyT11,
+                tyT12
               )
             )
-          case _ => EitherT.leftT[ContextState, Type](Error.FixNotArrowType)
+          case _ => formatError(InvalidFunctionTypeError(UnknownInfo, tyT1S))
         }
       } yield bodyType
     case TermRecord(fields) =>
@@ -130,11 +166,15 @@ object TypeChecker {
         }
         .map(TypeRecord(_))
     case TermFold(tyS) =>
-      EitherT(simplifyType(tyS).map(_ match {
-        case TypeRec(_, _, tyT) =>
-          Right(TypeArrow(typeSubstituteTop(tyS, tyT), tyS))
-        case _ => Left(Error.FoldNotRecursiveType)
-      }))
+      EitherT
+        .liftF(simplifyType(tyS))
+        .flatMap(_ match {
+          case TypeRec(_, _, tyT) =>
+            (TypeArrow(typeSubstituteTop(tyS, tyT), tyS): Type)
+              .pure[StateEither]
+          case _ =>
+            formatError(InvalidFoldForRecursiveTypeError(UnknownInfo, tyS))
+        })
     case TermLet(variable, t1, t2) =>
       for {
         tyT1 <- pureTypeOf(t1)
@@ -153,14 +193,18 @@ object TypeChecker {
         tyT1 <- EitherT.liftF(simplifyType(ty1))
         ty <- tyT1 match {
           case TypeAll(_, k1, tyT2) =>
-            EitherT.fromEither[ContextState](
-              Either.cond(
-                k1 == k2,
-                typeSubstituteTop(ty2, tyT2),
-                Error.TAppKindMismatch
+            typeErrorEitherCond(
+              k1 == k2,
+              typeSubstituteTop(ty2, tyT2),
+              InvalidTypeArgumentTypeError(UnknownInfo, ty2)
+            )
+          case _ =>
+            formatError(
+              TypeArgumentsNotAllowedTypeError(
+                UnknownInfo,
+                tyT1
               )
             )
-          case _ => EitherT.leftT[ContextState, Type](Error.TAppNotAllType)
         }
       } yield ty
     case TermMatch(exprTerm, cases) =>
@@ -173,16 +217,16 @@ object TypeChecker {
         caseExprTypes <- cases.traverse { (v) =>
           Context.runE(
             for {
-              patternTypeInfo <- typeOfPattern(v._1, exprType)
+              patternTypeInfo <- typeOfPattern(v._1, exprType, ty1)
               _ <- patternTypeInfo._1
                 .map(ty =>
-                  EitherT(
-                    isTypeEqual(exprType, ty).map(
-                      Either.cond(
-                        _,
-                        (),
-                        Error.MatchPatternTypeMismatch
-                      )
+                  isTypeEqualWithTypeError(
+                    exprType,
+                    ty,
+                    MatchTypeMismatchPatternTypeError(
+                      UnknownInfo,
+                      ty1,
+                      ty
                     )
                   )
                 )
@@ -192,40 +236,41 @@ object TypeChecker {
           )
         }
         // Finally, check if all the case expressions have the same type.
-        caseExprType <- EitherT(
-          caseExprTypes
-            .traverse(isTypeEqual(_, caseExprTypes.head))
-            .map(l =>
-              Either.cond(
-                l.forall(identity),
-                caseExprTypes.head,
-                Error.MatchCasesTypeMismatch
+        caseExprType <- caseExprTypes
+          .traverse(caseExprType =>
+            isTypeEqualWithTypeError(
+              caseExprType,
+              caseExprTypes.head,
+              MatchCasesTypeError(
+                UnknownInfo,
+                caseExprType,
+                caseExprTypes.head
               )
             )
-        )
+          )
+          .map(_.head)
       } yield caseExprType
     case TermTag(tag, t1, ty1) =>
       for {
         tyS <- EitherT.liftF(simplifyType(ty1))
-        tySVar <- EitherT.fromEither[ContextState](tyS match {
-          case TypeRec(_, _, v @ TypeVariant(_)) => Right(v)
-          case _                                 => Left(Error.TagNotVariantType)
-        })
-        tyTiExpected <- EitherT.fromEither[ContextState](
-          tySVar.v
-            .find(_._1 == tag)
-            .map { case (_, ty) => typeSubstituteTop(findRootType(ty1), ty) }
-            .toRight(Error.TagVariantFieldNotFound(tag))
-        )
-        tyTi <- pureTypeOf(t1)
-        ty <- EitherT(
-          isTypeEqual(tyTi, tyTiExpected).map(
-            Either.cond(
-              _,
-              ty1,
-              Error.TagFieldTypeMismatch
-            )
+        tySVar <- tyS match {
+          case TypeRec(_, _, v @ TypeVariant(_)) => v.pure[StateEither]
+          case _ =>
+            formatError(TagNotVariantTypeError(UnknownInfo, ty1))
+        }
+        tyTiExpected <- tySVar.v
+          .find(_._1 == tag)
+          .map { case (_, ty) =>
+            typeSubstituteTop(findRootType(ty1), ty).pure[StateEither]
+          }
+          .getOrElse(
+            formatError(TagVariantFieldNotFoundTypeError(UnknownInfo, ty1, tag))
           )
+        tyTi <- pureTypeOf(t1)
+        _ <- isTypeEqualWithTypeError(
+          tyTi,
+          tyTiExpected,
+          TagFieldMismatchTypeError(UnknownInfo, tyTi, tyTiExpected)
         )
       } yield typeSubstituteTop(ty1, tySVar)
     case TermTrue        => (TypeBool: Type).pure[StateEither]
@@ -235,48 +280,94 @@ object TypeChecker {
     case TermString(_)   => (TypeString: Type).pure[StateEither]
     case TermUnit        => (TypeUnit: Type).pure[StateEither]
     case TermBuiltin(ty) => ty.pure[StateEither]
-
   }
 
-  def typeOfPattern(p: Pattern, expr: Type): StateEither[(Option[Type], Int)] =
+  def isTypeEqualWithTypeError(
+      ty1: Type,
+      ty2: Type,
+      error: TypeError
+  ): StateEither[Type] = for {
+    isEqual <- EitherT.liftF(isTypeEqual(ty1, ty2))
+    t <- typeErrorEitherCond(
+      isEqual,
+      ty1,
+      error
+    )
+  } yield t
+
+  def typeErrorEitherCond[T](
+      cond: Boolean,
+      value: T,
+      error: TypeError
+  ): StateEither[T] =
+    cond match {
+      case true  => value.pure[StateEither]
+      case false => formatError(error)
+    }
+
+  def typeOfPattern(
+      p: Pattern,
+      simpleExprType: Type,
+      exprType: Type
+  ): StateEither[(Option[Type], Int)] =
     p match {
       case t: Term        => typeOf(t).map(v => (Some(v), 0))
       case PatternDefault => EitherT.pure((None, 0))
       case PatternNode(node, vars) =>
-        expr match {
+        simpleExprType match {
           case TypeVariant(fields) =>
             for {
-              ty <- EitherT.fromEither[ContextState](
-                fields
-                  .find(_._1 == node)
-                  .map(_._2)
-                  .toRight(Error.MatchPatternNotInVariant(node))
-              )
+              ty <- fields
+                .find(_._1 == node)
+                .map { case (_, v) => v.pure[StateEither] }
+                .getOrElse(
+                  formatError(
+                    MatchVariantPatternMismatchTypeError(
+                      UnknownInfo,
+                      exprType,
+                      node
+                    )
+                  )
+                )
               numOfBindVars <- ty match {
-                case tyR @ TypeRecord(_) => typeOfPattern(p, tyR).map(_._2)
-                case _                   => 0.pure[StateEither]
+                case tyR @ TypeRecord(_) =>
+                  typeOfPattern(p, tyR, exprType).map(_._2)
+                case _ => 0.pure[StateEither]
               }
-            } yield (Some(expr), numOfBindVars)
+            } yield (Some(simpleExprType), numOfBindVars)
           case TypeRecord(fields) =>
             for {
-              idx <- EitherT(
+              optionIdx <- EitherT.liftF(
                 State.inspect((ctx: Context) =>
                   Context
                     .nameToIndex(ctx, node)
-                    .toRight(Error.MatchPatternRecordNotFound(node))
                 )
               )
+              idx <- optionIdx
+                .map(_.pure[StateEither])
+                .getOrElse(
+                  formatError(
+                    MatchRecordPatternMismatchTypeError(
+                      UnknownInfo,
+                      exprType,
+                      node
+                    )
+                  )
+                )
               _ <- Context.getType(idx)
-              _ <- bindFieldsToVars(fields, vars)
-            } yield (Some(expr), fields.length)
+              _ <- bindFieldsToVars(fields, vars, simpleExprType)
+            } yield (Some(simpleExprType), fields.length)
           case _ =>
-            EitherT.leftT(Error.MatchPatternTypeMismatch)
+            formatError(
+              MatchExprNotDataTypeError(UnknownInfo, simpleExprType, node)
+            )
         }
     }
 
   def bindFieldsToVars(
       fields: List[(String, Type)],
-      vars: List[String]
+      vars: List[String],
+      exprType: Type
   ): StateEither[List[String]] =
     fields.length == vars.length match {
       case true =>
@@ -286,7 +377,14 @@ object TypeChecker {
           }
         )
       case false =>
-        EitherT.leftT(Error.MatchPatternWrongVariables)
+        formatError(
+          MatchPatternWrongVarsTypeError(
+            UnknownInfo,
+            exprType,
+            fields.length,
+            vars.length
+          )
+        )
     }
 
   def unfoldType(tyS: Type): ContextState[Type] = {
@@ -424,11 +522,20 @@ object TypeChecker {
       for {
         k1 <- pureKindOf(tyT1)
         k2 <- pureKindOf(tyT2)
-        k <- EitherT.fromEither[ContextState](k1 match {
+        k <- k1 match {
           case KindArrow(k11, k12) =>
-            Either.cond(k11 == k2, k12, Error.KindAppParameterMismatch)
-          case _ => Left(Error.NotArrowKind)
-        })
+            typeErrorEitherCond(
+              k11 == k2,
+              k12,
+              KindParameterMismatchTypeError(
+                UnknownInfo,
+                tyT2,
+                k2,
+                k11
+              )
+            )
+          case _ => formatError(NoTypArgumentsTypeError(UnknownInfo, tyT1))
+        }
       } yield k
     case TypeRec(tyX, k1, tyT2) =>
       for {
@@ -439,9 +546,13 @@ object TypeChecker {
   }
 
   def checkKindStar(ty: Type): StateEither[Kind] =
-    pureKindOf(ty).flatMap(k =>
-      EitherT.cond(k == KindStar, KindStar, Error.KindStarExpected)
-    )
+    pureKindOf(ty).flatMap { k =>
+      typeErrorEitherCond(
+        k == KindStar,
+        KindStar,
+        InvalidTypeArgumentTypeError(UnknownInfo, ty)
+      )
+    }
 
   def getKind(idx: Int): StateEither[Kind] =
     Context
@@ -449,50 +560,8 @@ object TypeChecker {
       .flatMap(_ match {
         case TypeVarBind(k)          => EitherT.rightT(k)
         case TypeAbbBind(_, Some(k)) => EitherT.rightT(k)
-        case TypeAbbBind(_, None)    => EitherT.left(Error.NoKindForVariable(idx))
-        case _                       => EitherT.left(Error.WrongKindBindingForVariable(idx))
+        case TypeAbbBind(_, None) =>
+          formatError(NoKindForTypeError(UnknownInfo, idx))
+        case _ => formatError(BindingNotFoundTypeError(UnknownInfo))
       })
-
-  object Error {
-    // Type Errors
-    val AscribeWrongType = "Body of as-term does not have the expected type."
-    val AppParameterTypeMismatch = "Parameter type mismatch."
-    val AppNotArrowType = "Arrow type expected on application."
-    def ProjFieldNotFound(f: String) = s"Field $f not found on the record."
-    val ProjNotRecordType = "Expected record type."
-    val MethodProjNotDataType = "Expected data type."
-    val FixWrongBodyType = "Type of body not compatible with the domain."
-    val FixNotArrowType = "Arrow type expected for fix combinator."
-    val FoldNotRecursiveType = "Recursive type expected on fold."
-    val UnfoldNotRecursiveType = "Recursive type expected on unfold."
-    val TAppKindMismatch = "Type argument has wrong kind."
-    val TAppNotAllType = "Universal type expected on type application."
-    val MatchPatternTypeMismatch =
-      "Pattern type is not the same as the type of the match expression."
-    val MatchCasesTypeMismatch = "Type between cases don't match."
-    def MatchPatternNotInVariant(p: String) =
-      s"Pattern $p not found in type variant."
-    def MatchPatternRecordNotFound(p: String) =
-      s"Pattern $p not found for type record."
-    def MatchPatternWrongVariables =
-      "Pattern has wrong number of variables for the type."
-    val TagNotVariantType = "Expected variant type on the tag."
-    def TagVariantFieldNotFound(f: String) =
-      s"Field $f not found on the variant."
-    val TagFieldTypeMismatch = "Field does not have an expected type."
-
-    // Kind Errors
-    val KindStarExpected = "Kind * expected."
-    def NoKindForVariable(idx: Int): ContextState[String] = State.inspect {
-      ctx =>
-        s"No kind recorded for type ${Context.indexToName(ctx, idx).get}"
-    }
-    def WrongKindBindingForVariable(idx: Int): ContextState[String] =
-      State.inspect { ctx =>
-        s"getKind: Wrong kind of binding for variable ${Context.indexToName(ctx, idx).get}"
-      }
-    val KindAppParameterMismatch = "Parameter kind mismatch."
-    val NotArrowKind = "Arrow kind expected"
-  }
-
 }

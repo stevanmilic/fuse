@@ -9,6 +9,8 @@ import cats.implicits._
 import scala.util._
 
 import Shifting._
+import core.TypeErrorFormatter.formatError
+import parser.Identifiers.{UnknownInfo}
 
 object Context {
   type Context = List[(String, Binding)]
@@ -19,7 +21,7 @@ object Context {
   // TODO: Use this instead of plain Option[A] in Desugar object.
   type StateOption[A] = OptionT[ContextState, A]
 
-  val empty = List[(String, Binding)]()
+  val emptyContext = List[(String, Binding)]()
   val WildcardName = "_"
 
   def addName(n: String): ContextState[String] =
@@ -57,44 +59,15 @@ object Context {
       case VarBind(ty)              => EitherT.rightT(ty)
       case TermAbbBind(_, Some(ty)) => EitherT.rightT(ty)
       case TermAbbBind(_, None) =>
-        EitherT.left(
-          State.inspect(ctx =>
-            s"No type recorded for variable ${indexToName(ctx, idx)}"
-          )
-        )
-      case _ =>
-        EitherT.left(
-          State.inspect(ctx =>
-            s"getTypeFromContext: Wrong kind of binding for variable ${indexToName(ctx, idx)}"
-          )
-        )
+        formatError(NoTypeForVariableTypeError(UnknownInfo, idx))
+      case _ => formatError(WrongBindingForVariableTypeError(UnknownInfo, idx))
     })
 
-  def getMethodType(typeIdx: Int, methodName: String): StateEither[Type] = for {
-    typeName <- EitherT(
-      State.inspect { (ctx: Context) =>
-        indexToName(ctx, typeIdx).toRight("Type not found")
-      }
-    )
-    methodIdx <- EitherT(
-      State.inspect { (ctx: Context) =>
-        nameToIndex(ctx, Desugar.toMethodId(methodName, typeName))
-          .toRight(s"Method $methodName not found")
-      }
-    )
-    methodType <- getType(methodIdx)
-  } yield methodType
-
-  def getBinding(idx: Int): StateEither[Binding] = EitherT(
-    State.inspect { ctx =>
-      ctx.lift(idx) match {
-        case Some((_, b)) => Right(bindingShift(idx + 1, b))
-        case _ =>
-          Left(
-            s"Variable not found: offset $idx, ctx size ${ctx.length}"
-          )
-      }
-    }
-  )
-
+  def getBinding(idx: Int): StateEither[Binding] =
+    EitherT
+      .liftF(State.inspect { (ctx: Context) => ctx.lift(idx) })
+      .flatMap(_ match {
+        case Some((_, b)) => bindingShift(idx + 1, b).pure[StateEither]
+        case _            => formatError(BindingNotFoundTypeError(UnknownInfo))
+      })
 }
