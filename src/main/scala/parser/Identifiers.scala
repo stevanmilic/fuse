@@ -10,7 +10,7 @@ object Identifiers {
 
   case class FIdentifier(value: String) extends FToken
   case class FIndent(size: Int) extends FToken
-  case class Location(line: Int, column: Int)
+  case class Location(line: Int, column: Int, lineInput: String)
 
   sealed trait Info
   case class FileInfo(
@@ -20,10 +20,24 @@ object Identifiers {
   case object UnknownInfo extends Info
 
   implicit val showInfo: Show[Info] =
-    Show.show ( info => info match {
-      case FileInfo(location, fileName) => s"${fileName}: ${location.line}:${location.column}"
-      case UnknownInfo => "unknown location"
-    })
+    Show.show(info =>
+      info match {
+        case FileInfo(location, fileName) =>
+          val padding = List.fill(location.line.toString().length)(" ").mkString
+          val errorSign = fansi.Bold.On(fansi.Color.LightRed("^"))
+          val errorIndicator =
+            List.fill(location.column - 1)(" ").mkString + errorSign
+          List(
+            s"\n$padding--> ${fileName}:${location.line}:${location.column}",
+            fansi.Bold.On(s"$padding |").toString(),
+            fansi.Bold
+              .On(s"${location.line} |")
+              .toString() + s" ${location.lineInput}",
+            fansi.Bold.On(s"$padding | ").toString() + errorIndicator
+          ).mkString("\n")
+        case UnknownInfo => ""
+      }
+    )
 
   def checkIndents(
       indents: Seq[FIndent],
@@ -43,7 +57,6 @@ object Identifiers {
   def findParentIndent(elems: List[Any]): Option[FIndent] = elems.collectFirst {
     case (i: FIndent) => i
   }
-
 }
 
 abstract class Identifiers extends Keywords {
@@ -60,7 +73,7 @@ abstract class Identifiers extends Keywords {
 
   def loc: Location = {
     val pos = Position(cursor, input)
-    Location(pos.line, pos.column)
+    Location(pos.line, pos.column, input.getLine(pos.line))
   }
 
   def mark = rule { atomic("") ~> (() => loc) }

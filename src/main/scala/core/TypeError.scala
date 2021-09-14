@@ -5,6 +5,7 @@ import cats.data.State
 import cats.implicits._
 import parser.Identifiers._
 import core.Context._
+import fuse.Utils.consoleError
 
 sealed trait TypeError
 
@@ -191,109 +192,109 @@ case class WrongBindingForVariableTypeError(
     code: String = "E0028"
 ) extends TypeError
 
-object TypeErrorFormatter {
-  def formatError[T](error: TypeError): StateEither[T] = {
+object TypeError {
+  def format[T](error: TypeError): StateEither[T] = {
     val errorMessage = error match {
       case AscribeWrongTypeError(info, termType, ascribedType, code) =>
         for {
           termTypeName <- Representation.typeToString(termType)
           ascribedTypeName <- Representation.typeToString(ascribedType)
-        } yield errorWithCode(
+        } yield consoleError(
           s"ascribed term is `$termTypeName`, expected `$ascribedTypeName`",
-          code,
-          info
+          info,
+          Some(code)
         )
       case VariableNotFunctionTypeError(info, termType, code) =>
         Representation
           .typeToString(termType)
           .map(name =>
-            errorWithCode(
+            consoleError(
               s"expected function, found `$name`",
-              code,
-              info
+              info,
+              Some(code)
             )
           )
       case MismatchFunctionTypeError(info, termType, expectedType, code) =>
         for {
           termTypeName <- Representation.typeToString(termType)
           expectedTypeName <- Representation.typeToString(expectedType)
-        } yield errorWithCode(
+        } yield consoleError(
           s"expected `$expectedTypeName`, found `$termTypeName`",
-          code,
-          info
+          info,
+          Some(code)
         )
       case TypeArgumentsNotAllowedTypeError(info, termType, code) =>
         Representation
           .typeToString(termType)
           .map(name =>
-            errorWithCode(
+            consoleError(
               s"type arguments are not allowed for type `$name`",
-              code,
-              info
+              info,
+              Some(code)
             )
           )
       case InvalidTypeArgumentTypeError(info, ty, code) =>
         for {
           typeName <- Representation.typeToString(ty)
-        } yield errorWithCode(
+        } yield consoleError(
           s"missing generics for type `$typeName`, expected type arguments",
-          code,
-          info
+          info,
+          Some(code)
         )
       case NoFieldsOnTypeError(info, termType, code) =>
         Representation
           .typeToString(termType)
           .map(name =>
-            errorWithCode(
+            consoleError(
               s"`$name` isn't a record type and therefore doesn't have fields",
-              code,
-              info
+              info,
+              Some(code)
             )
           )
       case FieldNotFoundTypeError(info, termType, field, code) =>
         Representation
           .typeToString(termType)
           .map(name =>
-            errorWithCode(
+            consoleError(
               s"no field `$field` on `$name` record",
-              code,
-              info
+              info,
+              Some(code)
             )
           )
       case NoMethodsOnTypeError(info, termType, code) =>
         Representation
           .typeToString(termType)
           .map(name =>
-            errorWithCode(
+            consoleError(
               s"`$name` isn't a data type and therefore can't have methods",
-              code,
-              info
+              info,
+              Some(code)
             )
           )
       case MethodNotFoundTypeError(info, termType, method, code) =>
         Representation
           .typeToString(termType)
           .map(name =>
-            errorWithCode(
+            consoleError(
               s"`$method` method not found in `$name` type",
-              code,
-              info
+              info,
+              Some(code)
             )
           )
       case NotFoundTypeError(info, varName, code) =>
-        errorWithCode(
+        consoleError(
           s"type not found $varName",
-          code,
-          info
+          info,
+          Some(code)
         ).pure[StateEither]
       case WrongReturnTypeError(info, termType, expectedType, code) =>
         for {
           termTypeName <- Representation.typeToString(termType)
           expectedTypeName <- Representation.typeToString(expectedType)
-        } yield errorWithCode(
+        } yield consoleError(
           s"expected `$expectedTypeName` return type, found `$termTypeName`",
-          code,
-          info
+          info,
+          Some(code)
         )
       case MatchTypeMismatchPatternTypeError(
             info,
@@ -304,10 +305,10 @@ object TypeErrorFormatter {
         for {
           matchTypeName <- Representation.typeToString(matchType)
           patternTypeName <- Representation.typeToString(patternType)
-        } yield errorWithCode(
+        } yield consoleError(
           s"expected `$matchTypeName` match expression type, found `$patternTypeName`",
-          code,
-          info
+          info,
+          Some(code)
         )
       case MatchCasesTypeError(
             info,
@@ -318,10 +319,10 @@ object TypeErrorFormatter {
         for {
           caseExprTypeName <- Representation.typeToString(caseExprType)
           expectedTypeName <- Representation.typeToString(expectedType)
-        } yield errorWithCode(
+        } yield consoleError(
           s"expected `$expectedTypeName` case expression type, found `$caseExprTypeName`",
-          code,
-          info
+          info,
+          Some(code)
         )
       case MatchExprNotDataTypeError(
             info,
@@ -332,10 +333,10 @@ object TypeErrorFormatter {
         Representation
           .typeToString(matchExprType)
           .map(name =>
-            errorWithCode(
+            consoleError(
               s"`$name` isn't a data type and therefore `$pattern` pattern can't be used",
-              code,
-              info
+              info,
+              Some(code)
             )
           )
       case MatchVariantPatternMismatchTypeError(
@@ -347,10 +348,10 @@ object TypeErrorFormatter {
         Representation
           .typeToString(matchExprType)
           .map(name =>
-            errorWithCode(
+            consoleError(
               s"variant `$name` type doesn't have `$pattern` option",
-              code,
-              info
+              info,
+              Some(code)
             )
           )
       case MatchRecordPatternMismatchTypeError(
@@ -362,10 +363,10 @@ object TypeErrorFormatter {
         Representation
           .typeToString(matchExprType)
           .map(name =>
-            errorWithCode(
+            consoleError(
               s"record `$name` type doesn't have `$pattern` field",
-              code,
-              info
+              info,
+              Some(code)
             )
           )
       case MatchPatternWrongVarsTypeError(
@@ -378,10 +379,10 @@ object TypeErrorFormatter {
         Representation
           .typeToString(matchExprType)
           .map(name =>
-            errorWithCode(
+            consoleError(
               s"wrong number of variables for `$name`, expected $expectedVariables, given $patternVariables",
-              code,
-              info
+              info,
+              Some(code)
             )
           )
       case InvalidFunctionTypeError(
@@ -392,10 +393,10 @@ object TypeErrorFormatter {
         Representation
           .typeToString(ty)
           .map(name =>
-            errorWithCode(
+            consoleError(
               s"expected a function type, found `$name`",
-              code,
-              info
+              info,
+              Some(code)
             )
           )
       case InvalidFoldForRecursiveTypeError(
@@ -406,20 +407,20 @@ object TypeErrorFormatter {
         Representation
           .typeToString(ty)
           .map(name =>
-            errorWithCode(
+            consoleError(
               s"expected a recursive type, found `$name`",
-              code,
-              info
+              info,
+              Some(code)
             )
           )
       case NoTypArgumentsTypeError(info, ty, code) =>
         Representation
           .typeToString(ty)
           .map(name =>
-            errorWithCode(
+            consoleError(
               s"type arguments are not allowed for `$name` type",
-              code,
-              info
+              info,
+              Some(code)
             )
           )
       case KindParameterMismatchTypeError(
@@ -434,72 +435,67 @@ object TypeErrorFormatter {
         Representation
           .typeToString(ty)
           .map(name =>
-            errorWithCode(
+            consoleError(
               s"expected `$expectedKindRepr` kind, given `$typeKindRepr` with `$name` type",
-              code,
-              info
+              info,
+              Some(code)
             )
           )
       case TagNotVariantTypeError(info, ty, code) =>
         Representation
           .typeToString(ty)
           .map(name =>
-            errorWithCode(
+            consoleError(
               s"expected variant type, given `$name`",
-              code,
-              info
+              info,
+              Some(code)
             )
           )
       case TagVariantFieldNotFoundTypeError(info, ty, field, code) =>
         Representation
           .typeToString(ty)
           .map(name =>
-            errorWithCode(
+            consoleError(
               s"variant `$name` type doesn't have `$field` field",
-              code,
-              info
+              info,
+              Some(code)
             )
           )
       case TagFieldMismatchTypeError(info, termType, expectedType, code) =>
         for {
           termTypeName <- Representation.typeToString(termType)
           expectedTypeName <- Representation.typeToString(expectedType)
-        } yield errorWithCode(
+        } yield consoleError(
           s"expected `$expectedTypeName` variant type, found `$termTypeName`",
-          code,
-          info
+          info,
+          Some(code)
         )
       case BindingNotFoundTypeError(info, code) =>
-        errorWithCode("variable not found", code, info).pure[StateEither]
+        consoleError("variable not found", info, Some(code)).pure[StateEither]
       case NoKindForTypeError(info, _, code) =>
-        errorWithCode("no kind recorded for type", code, info).pure[StateEither]
+        consoleError("no kind recorded for type", info, Some(code))
+          .pure[StateEither]
       case NoTypeForVariableTypeError(info, idx, code) =>
         EitherT.liftF(
           State.inspect((ctx: Context) =>
-            errorWithCode(
+            consoleError(
               s"no type recorded for variable `${indexToName(ctx, idx)}`",
-              code,
-              info
+              info,
+              Some(code)
             )
           )
         )
       case WrongBindingForVariableTypeError(info, idx, code) =>
         EitherT.liftF(
           State.inspect((ctx: Context) =>
-            errorWithCode(
+            consoleError(
               s"wrong kind of variable for `${indexToName(ctx, idx)}`",
-              code,
-              info
+              info,
+              Some(code)
             )
           )
         )
     }
     errorMessage.flatMap(e => EitherT.leftT[ContextState, T](e))
-  }
-
-  def errorWithCode(message: String, code: String, info: Info) = {
-    val errorCode = fansi.Bold.On(fansi.Color.LightRed(f"error[$code]"))
-    val messageBold = fansi.Bold.On(f": $message")
-    f"$errorCode$messageBold --> ${info.show}"
   }
 }

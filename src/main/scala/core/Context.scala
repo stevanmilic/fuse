@@ -9,7 +9,6 @@ import cats.implicits._
 import scala.util._
 
 import Shifting._
-import core.TypeErrorFormatter.formatError
 import parser.Identifiers.{UnknownInfo}
 
 object Context {
@@ -31,7 +30,7 @@ object Context {
     State { ctx => ((n, b) :: ctx, n) }
 
   def isNameBound(c: Context, x: String): Boolean =
-    c.exists { case ((i, _)) => i == x }
+    c.exists { case (i, _) => i == x }
 
   def pickFreshName(c: Context, x: String): ContextState[String] =
     isNameBound(c, x) match {
@@ -59,8 +58,9 @@ object Context {
       case VarBind(ty)              => EitherT.rightT(ty)
       case TermAbbBind(_, Some(ty)) => EitherT.rightT(ty)
       case TermAbbBind(_, None) =>
-        formatError(NoTypeForVariableTypeError(UnknownInfo, idx))
-      case _ => formatError(WrongBindingForVariableTypeError(UnknownInfo, idx))
+        TypeError.format(NoTypeForVariableTypeError(UnknownInfo, idx))
+      case _ =>
+        TypeError.format(WrongBindingForVariableTypeError(UnknownInfo, idx))
     })
 
   def getBinding(idx: Int): StateEither[Binding] =
@@ -68,6 +68,6 @@ object Context {
       .liftF(State.inspect { (ctx: Context) => ctx.lift(idx) })
       .flatMap(_ match {
         case Some((_, b)) => bindingShift(idx + 1, b).pure[StateEither]
-        case _            => formatError(BindingNotFoundTypeError(UnknownInfo))
+        case _            => TypeError.format(BindingNotFoundTypeError(UnknownInfo))
       })
 }

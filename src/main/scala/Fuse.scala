@@ -49,10 +49,11 @@ object Fuse
     val outIO: IO[OutputStream] = IO(new FileOutputStream(destination))
 
     (inIO, outIO).tupled
-      .bracket { case (in, out) => compile(in, out) } { case (in, out) =>
-        (IO(in.close()), IO(out.close())).tupled
-          .handleErrorWith(_ => IO.unit)
-          .void
+      .bracket { case (in, out) => compile(origin.getName(), in, out) } {
+        case (in, out) =>
+          (IO(in.close()), IO(out.close())).tupled
+            .handleErrorWith(_ => IO.unit)
+            .void
       }
   }
 }

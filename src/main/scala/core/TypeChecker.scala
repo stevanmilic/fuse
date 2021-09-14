@@ -12,7 +12,6 @@ import parser.FuseParser._
 import scala.util._
 import scala.annotation.tailrec
 import parser.Identifiers.{UnknownInfo}
-import core.TypeErrorFormatter.formatError
 
 object TypeChecker {
 
@@ -84,7 +83,7 @@ object TypeChecker {
               )
             ).map(_ => tyT12)
           case _ =>
-            formatError(
+            TypeError.format(
               VariableNotFunctionTypeError(
                 UnknownInfo,
                 tyT1
@@ -102,9 +101,11 @@ object TypeChecker {
               .find { case (f, _) => f == label }
               .map { case (_, ty) => ty.pure[StateEither] }
               .getOrElse(
-                formatError(FieldNotFoundTypeError(UnknownInfo, tyT1, label))
+                TypeError.format(
+                  FieldNotFoundTypeError(UnknownInfo, tyT1, label)
+                )
               )
-          case _ => formatError(NoFieldsOnTypeError(UnknownInfo, tyT1))
+          case _ => TypeError.format(NoFieldsOnTypeError(UnknownInfo, tyT1))
         }
       } yield fieldType
     case TermMethodProj(term, method) =>
@@ -122,7 +123,7 @@ object TypeChecker {
               )
               typeName <- optionName match {
                 case Some(name) => name.pure[StateEither]
-                case None       => formatError(NotFoundTypeError(UnknownInfo))
+                case None       => TypeError.format(NotFoundTypeError(UnknownInfo))
               }
               methodOptionIdx <- EitherT.liftF(
                 State.inspect { (ctx: Context) =>
@@ -132,13 +133,13 @@ object TypeChecker {
               methodIdx <- methodOptionIdx match {
                 case Some(idx) => idx.pure[StateEither]
                 case None =>
-                  formatError(
+                  TypeError.format(
                     MethodNotFoundTypeError(UnknownInfo, tyT1, method)
                   )
               }
               methodType <- getType(methodIdx)
             } yield methodType
-          case _ => formatError(NoMethodsOnTypeError(UnknownInfo, tyT1S))
+          case _ => TypeError.format(NoMethodsOnTypeError(UnknownInfo, tyT1S))
         }
       } yield fieldType
     case TermFix(t1) =>
@@ -156,7 +157,8 @@ object TypeChecker {
                 tyT12
               )
             )
-          case _ => formatError(InvalidFunctionTypeError(UnknownInfo, tyT1S))
+          case _ =>
+            TypeError.format(InvalidFunctionTypeError(UnknownInfo, tyT1S))
         }
       } yield bodyType
     case TermRecord(fields) =>
@@ -173,7 +175,7 @@ object TypeChecker {
             (TypeArrow(typeSubstituteTop(tyS, tyT), tyS): Type)
               .pure[StateEither]
           case _ =>
-            formatError(InvalidFoldForRecursiveTypeError(UnknownInfo, tyS))
+            TypeError.format(InvalidFoldForRecursiveTypeError(UnknownInfo, tyS))
         })
     case TermLet(variable, t1, t2) =>
       for {
@@ -199,7 +201,7 @@ object TypeChecker {
               InvalidTypeArgumentTypeError(UnknownInfo, ty2)
             )
           case _ =>
-            formatError(
+            TypeError.format(
               TypeArgumentsNotAllowedTypeError(
                 UnknownInfo,
                 tyT1
@@ -256,7 +258,7 @@ object TypeChecker {
         tySVar <- tyS match {
           case TypeRec(_, _, v @ TypeVariant(_)) => v.pure[StateEither]
           case _ =>
-            formatError(TagNotVariantTypeError(UnknownInfo, ty1))
+            TypeError.format(TagNotVariantTypeError(UnknownInfo, ty1))
         }
         tyTiExpected <- tySVar.v
           .find(_._1 == tag)
@@ -264,7 +266,9 @@ object TypeChecker {
             typeSubstituteTop(findRootType(ty1), ty).pure[StateEither]
           }
           .getOrElse(
-            formatError(TagVariantFieldNotFoundTypeError(UnknownInfo, ty1, tag))
+            TypeError.format(
+              TagVariantFieldNotFoundTypeError(UnknownInfo, ty1, tag)
+            )
           )
         tyTi <- pureTypeOf(t1)
         _ <- isTypeEqualWithTypeError(
@@ -302,7 +306,7 @@ object TypeChecker {
   ): StateEither[T] =
     cond match {
       case true  => value.pure[StateEither]
-      case false => formatError(error)
+      case false => TypeError.format(error)
     }
 
   def typeOfPattern(
@@ -321,7 +325,7 @@ object TypeChecker {
                 .find(_._1 == node)
                 .map { case (_, v) => v.pure[StateEither] }
                 .getOrElse(
-                  formatError(
+                  TypeError.format(
                     MatchVariantPatternMismatchTypeError(
                       UnknownInfo,
                       exprType,
@@ -346,7 +350,7 @@ object TypeChecker {
               idx <- optionIdx
                 .map(_.pure[StateEither])
                 .getOrElse(
-                  formatError(
+                  TypeError.format(
                     MatchRecordPatternMismatchTypeError(
                       UnknownInfo,
                       exprType,
@@ -358,7 +362,7 @@ object TypeChecker {
               _ <- bindFieldsToVars(fields, vars, simpleExprType)
             } yield (Some(simpleExprType), fields.length)
           case _ =>
-            formatError(
+            TypeError.format(
               MatchExprNotDataTypeError(UnknownInfo, simpleExprType, node)
             )
         }
@@ -377,7 +381,7 @@ object TypeChecker {
           }
         )
       case false =>
-        formatError(
+        TypeError.format(
           MatchPatternWrongVarsTypeError(
             UnknownInfo,
             exprType,
@@ -534,7 +538,7 @@ object TypeChecker {
                 k11
               )
             )
-          case _ => formatError(NoTypArgumentsTypeError(UnknownInfo, tyT1))
+          case _ => TypeError.format(NoTypArgumentsTypeError(UnknownInfo, tyT1))
         }
       } yield k
     case TypeRec(tyX, k1, tyT2) =>
@@ -561,7 +565,7 @@ object TypeChecker {
         case TypeVarBind(k)          => EitherT.rightT(k)
         case TypeAbbBind(_, Some(k)) => EitherT.rightT(k)
         case TypeAbbBind(_, None) =>
-          formatError(NoKindForTypeError(UnknownInfo, idx))
-        case _ => formatError(BindingNotFoundTypeError(UnknownInfo))
+          TypeError.format(NoKindForTypeError(UnknownInfo, idx))
+        case _ => TypeError.format(BindingNotFoundTypeError(UnknownInfo))
       })
 }

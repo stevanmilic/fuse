@@ -9,6 +9,7 @@ import core._
 import org.parboiled2._
 import parser.FuseParser
 import parser.FuseParser._
+import parser.ParserErrorFormatter
 
 import java.io._
 import scala.util.Either
@@ -17,12 +18,13 @@ import scala.util.Success
 
 object Compiler {
   def compile(
+      fileName: String,
       origin: InputStream,
       destination: OutputStream
   ): IO[Option[String]] =
     for {
       code <- IO.blocking(origin.readAllBytes.map(_.toChar).mkString)
-      result = process(code)
+      result = process(code, fileName)
       value <- result match {
         case Right(compiledCode) =>
           IO.blocking(destination.write(compiledCode.getBytes)).map(_ => None)
@@ -30,8 +32,8 @@ object Compiler {
       }
     } yield value
 
-  def process(code: String): Either[String, String] = for {
-    v <- parse(code)
+  def process(code: String, fileName: String): Either[String, String] = for {
+    v <- parse(code, fileName)
     c1 = BuiltIn.Functions.map(b => (b.i, NameBind))
     d <- Right(desugar(v.toList, c1))
     b2 = BuiltIn.Functions ++ d
@@ -39,12 +41,12 @@ object Compiler {
     repr <- typeRepresentation(types)
   } yield repr.mkString("\n")
 
-  def parse(code: String): Either[String, Seq[FDecl]] = {
+  def parse(code: String, fileName: String): Either[String, Seq[FDecl]] = {
     val parser = new FuseParser(code)
     parser.Module.run() match {
       case Success(result) => Right(result)
       case Failure(e: ParseError) =>
-        Left(parser.formatError(e, new ErrorFormatter(showTraces = false)))
+        Left(parser.formatError(e, new ParserErrorFormatter(fileName)))
       case Failure(e) => Left(e.toString)
     }
   }
