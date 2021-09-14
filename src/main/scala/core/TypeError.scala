@@ -3,9 +3,9 @@ package core
 import cats.data.EitherT
 import cats.data.State
 import cats.implicits._
-import parser.Identifiers._
 import core.Context._
 import fuse.Utils.consoleError
+import parser.Identifiers._
 
 sealed trait TypeError
 

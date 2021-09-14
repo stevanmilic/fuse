@@ -1,7 +1,7 @@
 package parser
 
-import org.parboiled2._
 import cats.Show
+import org.parboiled2._
 
 import scala.language.implicitConversions
 

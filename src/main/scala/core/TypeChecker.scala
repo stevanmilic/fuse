@@ -8,10 +8,10 @@ import cats.implicits._
 import core.Context._
 import core.Shifting._
 import parser.FuseParser._
+import parser.Identifiers.UnknownInfo
 
-import scala.util._
 import scala.annotation.tailrec
-import parser.Identifiers.{UnknownInfo}
+import scala.util._
 
 object TypeChecker {
 

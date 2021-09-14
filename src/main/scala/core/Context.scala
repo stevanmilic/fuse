@@ -5,11 +5,11 @@ import cats.data.OptionT
 import cats.data.State
 import cats.data.StateT
 import cats.implicits._
+import parser.Identifiers.UnknownInfo
 
 import scala.util._
 
 import Shifting._
-import parser.Identifiers.{UnknownInfo}
 
 object Context {
   type Context = List[(String, Binding)]
@@ -17,7 +17,6 @@ object Context {
   type Error = String
   type ContextState[A] = State[Context, A]
   type StateEither[A] = EitherT[ContextState, Error, A]
-  // TODO: Use this instead of plain Option[A] in Desugar object.
   type StateOption[A] = OptionT[ContextState, A]
 
   val emptyContext = List[(String, Binding)]()

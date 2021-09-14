@@ -1,8 +1,8 @@
 package fuse
 
 import cats.data.EitherT
-import cats.effect.IO
 import cats.data.State
+import cats.effect.IO
 import cats.implicits._
 import core.Context._
 import core._
@@ -32,16 +32,16 @@ object Compiler {
       }
     } yield value
 
-  def process(code: String, fileName: String): Either[String, String] = for {
+  def process(code: String, fileName: String): Either[Error, String] = for {
     v <- parse(code, fileName)
     c1 = BuiltIn.Functions.map(b => (b.i, NameBind))
-    d <- Right(desugar(v.toList, c1))
+    d <- desugar(v.toList, c1)
     b2 = BuiltIn.Functions ++ d
     types <- typeCheck(b2)
     repr <- typeRepresentation(types)
   } yield repr.mkString("\n")
 
-  def parse(code: String, fileName: String): Either[String, Seq[FDecl]] = {
+  def parse(code: String, fileName: String): Either[Error, Seq[FDecl]] = {
     val parser = new FuseParser(code)
     parser.Module.run() match {
       case Success(result) => Right(result)
@@ -51,12 +51,12 @@ object Compiler {
     }
   }
 
-  def desugar(decls: List[FDecl], initContext: Context): List[Bind] =
-    Desugar.process(decls).runA(initContext).value
+  def desugar(decls: List[FDecl], initContext: Context): Either[Error, List[Bind]] =
+    Desugar.process(decls).value.runA(initContext).value
 
   def typeCheck(
       binds: List[Bind]
-  ): Either[String, List[Bind]] =
+  ): Either[Error, List[Bind]] =
     TypeChecker
       .check(binds)
       .value
