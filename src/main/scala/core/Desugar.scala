@@ -20,7 +20,7 @@ object Desugar {
   // # Bind # region_start
 
   def bind(d: FDecl): StateEither[List[Bind]] = d match {
-    case FVariantTypeDecl(_, FIdentifier(i), typ, values) =>
+    case FVariantTypeDecl(info, FIdentifier(i), typ, values) =>
       val variant = toTypeVariant(values)
       val rec = withRecType(i, typ, variant)
       for {
@@ -28,30 +28,30 @@ object Desugar {
         typeBind <- bindTypeAbb(i, variantType)
         constructorBinds <- values.toList.traverse(v =>
           for {
-            constructor <- Context.runE(buildVariantConstructor(i, typ, v))
+            constructor <- Context.runE(buildVariantConstructor(info, i, typ, v))
             constructorBind <- bindTermAbb(v.v.value, constructor)
           } yield constructorBind
         )
       } yield typeBind :: constructorBinds
-    case FRecordTypeDecl(_, FIdentifier(i), typ, fields) =>
+    case FRecordTypeDecl(info, FIdentifier(i), typ, fields) =>
       val record = toTypeRecord(fields.map(_.p))
       val rec = withRecType(i, typ, record)
       for {
         recordType <- Context.runE(withTypeAbs(typ, rec))
         typeBind <- bindTypeAbb(i, recordType)
         constructor <- Context.runE(
-          buildRecordConstructor(i, typ, Left(fields.map(_.p)))
+          buildRecordConstructor(info, i, typ, Left(fields.map(_.p)))
         )
         constructorBind <- bindTermAbb(toRecordConstructorId(i), constructor)
       } yield typeBind :: List(constructorBind)
-    case FTupleTypeDecl(_, FIdentifier(i), typ, types) =>
+    case FTupleTypeDecl(info, FIdentifier(i), typ, types) =>
       val tuple = toTupleTypeRecord(types)
       val rec = withRecType(i, typ, tuple)
       for {
         recordType <- Context.runE(withTypeAbs(typ, rec))
         typeBind <- bindTypeAbb(i, recordType)
         constructor <- Context.runE(
-          buildRecordConstructor(i, typ, Right(types))
+          buildRecordConstructor(info, i, typ, Right(types))
         )
         constructorBind <- bindTermAbb(toRecordConstructorId(i), constructor)
       } yield typeBind :: List(constructorBind)
@@ -112,7 +112,7 @@ object Desugar {
       sig: FFuncSig,
       exprs: Seq[FExpr]
   ): StateEither[Term] = for {
-    t <- EitherT.liftF(withTermTypeAbs(tp))
+    t <- EitherT.liftF(withTermTypeAbs(sig.info, tp))
     abs <- withFuncAbs(sig, toTermExpr(exprs.toList))
   } yield t(abs)
 
@@ -133,25 +133,25 @@ object Desugar {
             // is returning the value for the function.
             retVal =
               if (index == params.length - 1) Some(retType) else None
-          } yield TermAbs(variable, typ, term, retVal)
+          } yield TermAbs(sig.info, variable, typ, term, retVal)
         }
-      withFixCombinator(sig.i.value, params.map(_.t).toList, sig.r, func)
+      withFixCombinator(sig.info, sig.i.value, params.map(_.t).toList, sig.r, func)
     case None =>
       for {
         _ <- EitherT.liftF(Context.addName(WildcardName))
         typ <- toType(sig.r)
         term <- body
-      } yield TermAbs(WildcardName, TypeUnit, term, Some(typ))
+      } yield TermAbs(sig.info, WildcardName, TypeUnit, term, Some(typ))
   }
 
   def toTermExpr(
       exprs: List[FExpr],
       letVariable: Option[(String, Option[FType])] = None
   ): StateEither[Term] = exprs match {
-    case Nil => EitherT.rightT(TermUnit)
-    case l @ FLetExpr(_, i, t, e) :: lexprs =>
+    case Nil => EitherT.rightT(TermUnit(UnknownInfo))
+    case l @ FLetExpr(info, i, t, e) :: lexprs =>
       for {
-        lt <- withTermLet(i.value, t, e.toList)
+        lt <- withTermLet(info, i.value, t, e.toList)
         le <- toTermExpr(lexprs)
       } yield lt(le)
     case h :: Nil => toTerm(h, letVariable)
@@ -160,6 +160,7 @@ object Desugar {
   }
 
   def withTermLet(
+      info: Info,
       i: String,
       t: Option[FType],
       expr: List[FExpr]
@@ -167,64 +168,64 @@ object Desugar {
     for {
       t1 <- toTermExpr(expr, Some((i, t)))
       v <- EitherT.liftF(Context.addName(i))
-    } yield t2 => TermLet(v, t1, t2): Term
+    } yield t2 => TermLet(info, v, t1, t2): Term
 
   def toTerm(
       e: FExpr,
       letVariable: Option[(String, Option[FType])] = None
   ): StateEither[Term] =
     e match {
-      case FApp(_, e, typeArgs, args) =>
+      case FApp(info, e, typeArgs, args) =>
         for {
           exprTerm <- toTerm(e)
           typedTerm <- typeArgs
             .getOrElse(Seq())
             .toList
             .traverse(toType(_))
-            .map(_.foldLeft(exprTerm)((term, ty) => TermTApp(term, ty)))
+            .map(_.foldLeft(exprTerm)((term, ty) => TermTApp(info, term, ty)))
           computedTerm <- args.toList.flatten.flatten
             .traverse(toTerm(_))
             .map(
-              _.foldLeft(typedTerm)((term, arg) => TermApp(term, arg))
+              _.foldLeft(typedTerm)((term, arg) => TermApp(info, term, arg))
             )
         } yield computedTerm
-      case FMatch(_, e, cases) =>
+      case FMatch(info, e, cases) =>
         for {
           me <- toTerm(e)
           mc <- cases.toList.traverse(c => {
             val exprList = c.e.toList
             c.p.toList.traverse(p => Context.runE(toMatchCase(p, exprList)))
           })
-        } yield TermMatch(me, mc.flatten)
-      case FProj(_, expr, projections) => toTermProj(expr, projections)
-      case FMethodApp(_, proj, typeArgs, args) =>
+        } yield TermMatch(info, me, mc.flatten)
+      case FProj(info, expr, projections) => toTermProj(info, expr, projections)
+      case FMethodApp(info, proj, typeArgs, args) =>
         for {
-          termProj <- toTermProj(proj.e, proj.ids.tail)
-          methodProj = TermMethodProj(termProj, proj.ids.head.value)
+          termProj <- toTermProj(info, proj.e, proj.ids.tail)
+          methodProj = TermMethodProj(info, termProj, proj.ids.head.value)
           typedTerm <- typeArgs
             .getOrElse(Seq())
             .toList
             .traverse(toType(_))
-            .map(_.foldLeft(methodProj: Term)((term, ty) => TermTApp(term, ty)))
-          withImplicitThis = TermApp(typedTerm, methodProj.t)
+            .map(_.foldLeft(methodProj: Term)((term, ty) => TermTApp(info, term, ty)))
+          withImplicitThis = TermApp(info, typedTerm, methodProj.t)
           computedTerm <- args.toList.flatten.flatten
             .traverse(toTerm(_))
             .map(
-              _.foldLeft(withImplicitThis)((term, arg) => TermApp(term, arg))
+              _.foldLeft(withImplicitThis)((term, arg) => TermApp(info, term, arg))
             )
         } yield computedTerm
-      case FAbs(_, bindings, Some(rType), expr) =>
+      case FAbs(info, bindings, Some(rType), expr) =>
         letVariable match {
           case Some((f, _)) =>
-            val closure = withClosure(bindings.toList, toTermExpr(expr.toList))
+            val closure = withClosure(info, bindings.toList, toTermExpr(expr.toList))
             Context.runE(
-              withFixCombinator(f, bindings.map(_.t.get).toList, rType, closure)
+              withFixCombinator(info, f, bindings.map(_.t.get).toList, rType, closure)
             )
           case _ =>
-            withClosure(bindings.toList, toTermExpr(expr.toList))
+            withClosure(info, bindings.toList, toTermExpr(expr.toList))
         }
-      case FAbs(_, bindings, _, expr) =>
-        withClosure(bindings.toList, toTermExpr(expr.toList))
+      case FAbs(info, bindings, _, expr) =>
+        withClosure(info, bindings.toList, toTermExpr(expr.toList))
       case FMultiplication(i1, i2) =>
         toTermOperator("&multiply", i1, i2)
       // TODO: Add other operators.
@@ -236,27 +237,28 @@ object Desugar {
         toTermOperator("&eq", i1, i2)
       case FVar(info, i) =>
         EitherT
-          .liftF(toTermVar(i))
+          .liftF(toTermVar(info, i))
           .flatMap(_ match {
             case Some(v) => v.pure[StateEither]
             case None =>
               DesugarError.format(VariableNotFoundDesugarError(info, i))
           })
-      case FBool(_, true)  => EitherT.rightT(TermTrue)
-      case FBool(_, false) => EitherT.rightT(TermFalse)
-      case FInt(_, i)      => EitherT.rightT(TermInt(i))
-      case FFloat(_, f)    => EitherT.rightT(TermFloat(f))
-      case FString(_, s)   => EitherT.rightT(TermString(s))
+      case FBool(info, true)  => EitherT.rightT(TermTrue(info))
+      case FBool(info, false) => EitherT.rightT(TermFalse(info))
+      case FInt(info, i)      => EitherT.rightT(TermInt(info, i))
+      case FFloat(info, f)    => EitherT.rightT(TermFloat(info, f))
+      case FString(info, s)   => EitherT.rightT(TermString(info, s))
       case _ =>
         DesugarError.format(ExpressionNotSupportedDesugarError(e.info))
     }
 
-  def toTermProj(e: FInfixExpr, ids: Seq[FVar]): StateEither[Term] =
+  def toTermProj(info: Info, e: FInfixExpr, ids: Seq[FVar]): StateEither[Term] =
     toTerm(e).map(t =>
-      ids.foldLeft(t)((terms, proj) => TermProj(terms, proj.value))
+      ids.foldLeft(t)((terms, proj) => TermProj(info, terms, proj.value))
     )
 
   def withClosure(
+      info: Info,
       params: List[FBinding],
       body: StateEither[Term]
   ): StateEither[Term] =
@@ -265,10 +267,11 @@ object Desugar {
         typ <- toType(t)
         v <- EitherT.liftF(Context.addName(i.value))
         term <- acc
-      } yield TermClosure(v, Some(typ), term)
+      } yield TermClosure(info, v, Some(typ), term)
     }
 
   def withFixCombinator(
+      info: Info,
       name: String,
       params: List[FType],
       returnType: FType,
@@ -282,14 +285,14 @@ object Desugar {
     term <- func
     // NOTE: The abstraction is wrapped with a fix combinator to implement
     // recursion.
-  } yield TermFix(TermAbs(variable, ty, term))
+  } yield TermFix(info, TermAbs(info, variable, ty, term))
 
   def toTermOperator(
       func: String,
       e1: FExpr,
       e2: FExpr
   ): StateEither[Term] = for {
-    optionFuncVar <- EitherT.liftF(toTermVar(func))
+    optionFuncVar <- EitherT.liftF(toTermVar(e1.info, func))
     funcVar <- optionFuncVar match {
       case Some(v) => v.pure[StateEither]
       case None =>
@@ -300,7 +303,7 @@ object Desugar {
     t1 <- toTerm(e1)
     t2 <- toTerm(e2)
 
-  } yield TermApp(TermApp(funcVar, t1), t2)
+  } yield TermApp(e2.info, TermApp(e1.info, funcVar, t1), t2)
 
   def toMatchCase(
       p: FPattern,
@@ -311,37 +314,37 @@ object Desugar {
   } yield (p, ce)
 
   def toPattern(p: FPattern): StateEither[Pattern] = p match {
-    case FIdentifierPattern(_, v, _) => EitherT.rightT(PatternNode(v))
-    case FVariantOrRecordPattern(_, t, ps) =>
+    case FIdentifierPattern(info, v, _) => EitherT.rightT(PatternNode(info, v))
+    case FVariantOrRecordPattern(info, t, ps) =>
       for {
         np <- ps.toList.traverse(toPattern(_))
         vars <- np.traverse(_ match {
-          case PatternNode(v, List()) =>
+          case PatternNode(info, v, List()) =>
             EitherT.liftF[ContextState, Error, String](Context.addName(v))
-          case PatternDefault => WildcardName.pure[StateEither]
+          case PatternDefault(_) => WildcardName.pure[StateEither]
           case _              =>
             // TODO: Use the info from the pattern core class, instead of root pattern.
             DesugarError.format[String](
               NestedPatternNotSupportedDesugarError(p.info)
             )
         })
-      } yield PatternNode(t.value, vars)
-    case FWildCardPattern(_) => EitherT.rightT(PatternDefault)
-    case FBool(_, true)      => EitherT.rightT(TermTrue)
-    case FBool(_, false)     => EitherT.rightT(TermFalse)
-    case FInt(_, i)          => EitherT.rightT(TermInt(i))
-    case FFloat(_, f)        => EitherT.rightT(TermFloat(f))
-    case FString(_, s)       => EitherT.rightT(TermString(s))
+      } yield PatternNode(info, t.value, vars)
+    case FWildCardPattern(info) => EitherT.rightT(PatternDefault(info))
+    case FBool(info, true)      => EitherT.rightT(TermTrue(info))
+    case FBool(info, false)     => EitherT.rightT(TermFalse(info))
+    case FInt(info, i)          => EitherT.rightT(TermInt(info, i))
+    case FFloat(info, f)        => EitherT.rightT(TermFloat(info, f))
+    case FString(info, s)       => EitherT.rightT(TermString(info, s))
     case _                   => DesugarError.format(CaseNotSupportedDesugarError(p.info))
   }
 
-  def toTermVar(i: String): ContextState[Option[Term]] =
+  def toTermVar(info: Info, i: String): ContextState[Option[Term]] =
     State { ctx =>
       Context
         .nameToIndex(ctx, toRecordConstructorId(i))
         .orElse(Context.nameToIndex(ctx, i))
         .orElse(Context.nameToIndex(ctx, toRecAbsId(i))) match {
-        case Some(index) => (ctx, Some(TermVar(index, ctx.length)))
+        case Some(index) => (ctx, Some(TermVar(info, index, ctx.length)))
         case None        => (ctx, None)
       }
     }
@@ -402,47 +405,50 @@ object Desugar {
   // # Constructors # region_start
 
   def buildVariantConstructor(
+      info: Info,
       variantName: String,
       tp: FTypeParamClause,
       v: FVariantTypeValue
   ): StateEither[Term] = v match {
-    case FVariantTypeValue(_, FIdentifier(i), None) =>
+    case FVariantTypeValue(info, FIdentifier(i), None) =>
       EitherT.liftF(for {
-        g <- withTermTypeAbs(tp)
-        tag = toTermTag(variantName, tp, i, State.pure(TermUnit))
-        fold <- withFold(variantName, tp, tag)
+        g <- withTermTypeAbs(info, tp)
+        tag = toTermTag(info, variantName, tp, i, State.pure(TermUnit(info)))
+        fold <- withFold(info, variantName, tp, tag)
       } yield g(fold))
-    case FVariantTypeValue(_, FIdentifier(i), Some(fields)) =>
+    case FVariantTypeValue(info, FIdentifier(i), Some(fields)) =>
       for {
-        g <- EitherT.liftF(withTermTypeAbs(tp))
+        g <- EitherT.liftF(withTermTypeAbs(info, tp))
         values = toRecordValues(fields)
-        r = toTermRecord(values)
-        tag = toTermTag(variantName, tp, i, r)
-        fold = withFold(variantName, tp, tag)
-        abs <- withRecordAbs(values, fold)
+        r = toTermRecord(info, values)
+        tag = toTermTag(info, variantName, tp, i, r)
+        fold = withFold(info, variantName, tp, tag)
+        abs <- withRecordAbs(info, values, fold)
       } yield g(abs)
   }
 
   def buildRecordConstructor(
+      info: Info,
       recordName: String,
       tp: FTypeParamClause,
       fields: Either[FParams, FTypes]
   ): StateEither[Term] = for {
-    g <- EitherT.liftF(withTermTypeAbs(tp))
+    g <- EitherT.liftF(withTermTypeAbs(info, tp))
     values = toRecordValues(fields)
-    r = toTermRecord(values)
-    fold = withFold(recordName, tp, r)
-    abs <- withRecordAbs(values, fold)
+    r = toTermRecord(info, values)
+    fold = withFold(info, recordName, tp, r)
+    abs <- withRecordAbs(info, values, fold)
   } yield g(abs)
 
-  def toTermRecord(values: List[(String, FType)]): ContextState[Term] =
+  def toTermRecord(info: Info, values: List[(String, FType)]): ContextState[Term] =
     values
       .traverse { case (n, t) =>
-        toTermVar(withTupleParamId(n)).map(term => (n, term.get))
+        toTermVar(info, withTupleParamId(n)).map(term => (n, term.get))
       }
-      .map(TermRecord(_))
+      .map(TermRecord(info, _))
 
   def toTermTag(
+      info: Info,
       name: String,
       tp: FTypeParamClause,
       tag: String,
@@ -450,7 +456,7 @@ object Desugar {
   ): ContextState[Term] = for {
     term <- body
     typ <- withTypeApp(name, tp)
-  } yield TermTag(tag, term, typ)
+  } yield TermTag(info, tag, term, typ)
 
   def toRecordValues(fields: Either[FParams, FTypes]) =
     fields match {
@@ -459,17 +465,18 @@ object Desugar {
         types.toList.zipWithIndex.map(v => ((v._2 + 1).toString, v._1))
     }
 
-  def withTermTypeAbs(typ: FTypeParamClause): ContextState[Term => Term] =
+  def withTermTypeAbs(info: Info, typ: FTypeParamClause): ContextState[Term => Term] =
     typ match {
       case Some(p) =>
         val ids = p.map(_.i.value).toList
         for {
           _ <- ids.traverse(Context.addName(_))
-        } yield t => ids.foldRight(t)((i, acc) => TermTAbs(i, acc))
+        } yield t => ids.foldRight(t)((i, acc) => TermTAbs(info, i, acc))
       case None => State.pure(identity)
     }
 
   def withRecordAbs(
+      info: Info,
       values: List[(String, FType)],
       body: ContextState[Term]
   ): StateEither[Term] =
@@ -480,10 +487,11 @@ object Desugar {
           typ <- toType(p._2)
           v <- EitherT.liftF(Context.addName(p._1))
           term <- acc
-        } yield TermAbs(v, typ, term)
+        } yield TermAbs(info, v, typ, term)
       )
 
   def withFold(
+      info: Info,
       name: String,
       tp: FTypeParamClause,
       body: ContextState[Term]
@@ -491,7 +499,7 @@ object Desugar {
     for {
       typ <- withTypeApp(name, tp)
       term <- body
-    } yield TermApp(TermFold(typ), term)
+    } yield TermApp(info, TermFold(info, typ), term)
 
   def withTypeApp(name: String, tp: FTypeParamClause): ContextState[Type] =
     tp match {

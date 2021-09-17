@@ -52,14 +52,14 @@ object Context {
   def runE[A](state: StateEither[A]): StateEither[A] =
     EitherT { State(ctx => (ctx, state.value.runA(ctx).value)) }
 
-  def getType(idx: Int): StateEither[Type] =
+  def getType(info: Info, idx: Int): StateEither[Type] =
     getBinding(idx).flatMap[Error, Type](_ match {
       case VarBind(ty)              => EitherT.rightT(ty)
       case TermAbbBind(_, Some(ty)) => EitherT.rightT(ty)
       case TermAbbBind(_, None) =>
-        TypeError.format(NoTypeForVariableTypeError(UnknownInfo, idx))
+        TypeError.format(NoTypeForVariableTypeError(info, idx))
       case _ =>
-        TypeError.format(WrongBindingForVariableTypeError(UnknownInfo, idx))
+        TypeError.format(WrongBindingForVariableTypeError(info, idx))
     })
 
   def getBinding(idx: Int): StateEither[Binding] =
