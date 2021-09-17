@@ -6,32 +6,46 @@ import scala.util.Either
 object Expressions {
   import Identifiers._
   import Types._
+  import Info._
+  import Info.ShowInfo._
 
   sealed trait FExpr
 
   case class FLetExpr(
+      info: Info,
       i: FIdentifier,
       t: Option[FType],
-      e: Seq[FExpr],
+      e: Seq[FExpr]
   ) extends FExpr
 
-  case class FBinding(i: FIdentifier, t: Option[FType] = None)
-  case class FAbs(params: Seq[FBinding], t: Option[FType], e: Seq[FExpr])
-      extends FExpr
+  case class FBinding(info: Info, i: FIdentifier, t: Option[FType] = None)
+  case class FAbs(
+      info: Info,
+      params: Seq[FBinding],
+      t: Option[FType],
+      e: Seq[FExpr]
+  ) extends FExpr
 
   sealed trait FPattern
-  case class FIdentifierPattern(value: String, p: Option[FPattern] = None)
-      extends FPattern
-  object FWildCardPattern extends FPattern
-  case class FTuplePattern(s: Seq[FPattern]) extends FPattern
-  case class FVariantOrRecordPattern(i: FIdentifier, s: Seq[FPattern])
-      extends FPattern
+  case class FIdentifierPattern(
+      info: Info,
+      value: String,
+      p: Option[FPattern] = None
+  ) extends FPattern
+  case class FWildCardPattern(info: Info) extends FPattern
+  case class FTuplePattern(info: Info, s: Seq[FPattern]) extends FPattern
+  case class FVariantOrRecordPattern(
+      info: Info,
+      i: FIdentifier,
+      s: Seq[FPattern]
+  ) extends FPattern
   case class FCase(
+      info: Info,
       p: Seq[FPattern],
       guard: Option[FInfixExpr],
-      e: Seq[FExpr],
+      e: Seq[FExpr]
   )
-  case class FMatch(e: FInfixExpr, c: Seq[FCase]) extends FExpr
+  case class FMatch(info: Info, e: FInfixExpr, c: Seq[FCase]) extends FExpr
 
   sealed trait FInfixExpr extends FExpr
   case class FAddition(lhs: FInfixExpr, rhs: FInfixExpr) extends FInfixExpr
@@ -50,18 +64,20 @@ object Expressions {
   case class FGreaterThanEqual(lhs: FInfixExpr, rhs: FInfixExpr)
       extends FInfixExpr
 
-  case class FVar(value: String) extends FInfixExpr
-  case class FProj(e: FInfixExpr, ids: Seq[FVar]) extends FInfixExpr
+  case class FVar(info: Info, value: String) extends FInfixExpr
+  case class FProj(info: Info, e: FInfixExpr, ids: Seq[FVar]) extends FInfixExpr
   type FArguments = Option[Seq[FExpr]]
   type FTypeArguments = Option[Seq[FType]]
   // NOTE: This is the actual application, but the arguments can be optional
   // indicating the abstraction accepts a unit.
   case class FApp(
+      info: Info,
       e: FExpr,
       typeArguments: FTypeArguments = None,
       args: Seq[FArguments]
   ) extends FInfixExpr
   case class FMethodApp(
+      info: Info,
       e: FProj,
       typeArguments: FTypeArguments = None,
       args: Seq[FArguments]
@@ -69,13 +85,51 @@ object Expressions {
 
   // Literals
   sealed trait FLiteral extends FInfixExpr with FPattern
-  case class FBool(b: Boolean) extends FLiteral
-  case class FInt(i: Integer) extends FLiteral
-  case class FFloat(f: Float) extends FLiteral
-  case class FString(s: String) extends FLiteral
+  case class FBool(info: Info, b: Boolean) extends FLiteral
+  case class FInt(info: Info, i: Integer) extends FLiteral
+  case class FFloat(info: Info, f: Float) extends FLiteral
+  case class FString(info: Info, s: String) extends FLiteral
+
+  implicit val showExprInfo: ShowInfo[FExpr] = ShowInfo.info(_ match {
+    case FLetExpr(info, _, _, _)   => info
+    case FAbs(info, _, _, _)       => info
+    case FMatch(info, _, _)        => info
+    case FVar(info, _)             => info
+    case FProj(info, _, _)         => info
+    case FApp(info, _, _, _)       => info
+    case FMethodApp(info, _, _, _) => info
+    case FBool(info, _)            => info
+    case FInt(info, _)             => info
+    case FFloat(info, _)           => info
+    case FString(info, _)          => info
+    case FAddition(lhs, _)         => (lhs: FExpr).info
+    case FSubtraction(lhs, _)      => (lhs: FExpr).info
+    case FMultiplication(lhs, _)   => (lhs: FExpr).info
+    case FDivision(lhs, _)         => (lhs: FExpr).info
+    case FModulo(lhs, _)           => (lhs: FExpr).info
+    case FEquality(lhs, _)         => (lhs: FExpr).info
+    case FNotEquality(lhs, _)      => (lhs: FExpr).info
+    case FAnd(lhs, _)              => (lhs: FExpr).info
+    case FOr(lhs, _)               => (lhs: FExpr).info
+    case FLessThan(lhs, _)         => (lhs: FExpr).info
+    case FLessThanEqual(lhs, _)    => (lhs: FExpr).info
+    case FGreaterThan(lhs, _)      => (lhs: FExpr).info
+    case FGreaterThanEqual(lhs, _) => (lhs: FExpr).info
+  })
+
+  implicit val showPatternInfo: ShowInfo[FPattern] = ShowInfo.info(_ match {
+    case FBool(info, _)                      => info
+    case FInt(info, _)                       => info
+    case FFloat(info, _)                     => info
+    case FString(info, _)                    => info
+    case FIdentifierPattern(info, _, _)      => info
+    case FWildCardPattern(info)              => info
+    case FTuplePattern(info, _)              => info
+    case FVariantOrRecordPattern(info, _, _) => info
+  })
 }
 
-class Expressions(val input: ParserInput) extends Types {
+abstract class Expressions(fileName: String) extends Types(fileName) {
   import Expressions._
   import Identifiers._
 
@@ -98,25 +152,26 @@ class Expressions(val input: ParserInput) extends Types {
     rule { LambdaExpr ~> (Seq(_)) | InfixExpr ~> (Seq(_)) | InlineBlockExpr }
   }
   def LetExpr = rule {
-    "let" ~ Id ~ (":" ~ Type).? ~ wspStr("=") ~ InlineExpr ~> FLetExpr
+    info ~ "let" ~ Id ~ (":" ~ Type).? ~ wspStr("=") ~ InlineExpr ~> FLetExpr
   }
   def LambdaExpr = {
-    def Binding = rule { Id ~ (":" ~ Type).? ~> FBinding }
+    def Binding = rule { info ~ Id ~ (":" ~ Type).? ~> FBinding }
     def Bindings = rule { '(' ~ Binding.*(",") ~ ')' }
     def ReturnType = rule { wspStr("->") ~ Type }
     rule {
-      (Bindings | Id ~> (i => Seq(FBinding(i)))) ~ ReturnType.? ~ wspStr("=>") ~
-        InlineExpr ~> FAbs
+      info ~ (Bindings | info ~ Id ~> ((i, id) =>
+        Seq(FBinding(i, id))
+      )) ~ ReturnType.? ~ wspStr("=>") ~ InlineExpr ~> FAbs
     }
   }
 
   def MatchExpr = {
     def Pattern: Rule1[FPattern] = rule {
-      Id ~ "(" ~ Patterns ~ ")" ~> FVariantOrRecordPattern |
-        "(" ~ Patterns ~ ")" ~> FTuplePattern |
+      info ~ Id ~ "(" ~ Patterns ~ ")" ~> FVariantOrRecordPattern |
+        info ~ "(" ~ Patterns ~ ")" ~> FTuplePattern |
         Literal |
-        capture("_") ~> (_ => FWildCardPattern) |
-        capture(IdentifierPart) ~ (wspStr("@") ~ Pattern).? ~>
+        info ~ capture("_") ~> ((i, _) => FWildCardPattern(i)) |
+        info ~ capture(IdentifierPart) ~ (wspStr("@") ~ Pattern).? ~>
         FIdentifierPattern
     }
     def Patterns = rule {
@@ -128,10 +183,10 @@ class Expressions(val input: ParserInput) extends Types {
     }
     def Case = () =>
       rule {
-        ArmPatterns ~ Guard.? ~ wspStr("=>") ~ InlineExpr ~> FCase
+        info ~ ArmPatterns ~ Guard.? ~ wspStr("=>") ~ InlineExpr ~> FCase
       }
     rule {
-      "match" ~ InfixExpr ~ ":" ~ oneOrMoreWithIndent(Case) ~> FMatch
+      info ~ "match" ~ InfixExpr ~ ":" ~ oneOrMoreWithIndent(Case) ~> FMatch
     }
   }
 
@@ -146,14 +201,16 @@ class Expressions(val input: ParserInput) extends Types {
     def TypeArguments = rule { "[" ~ Type.+(",") ~ "]" }
 
     def CallExpr = rule {
-      SimpleExpr ~ TypeArguments.? ~ Arguments.+ ~> FApp
+      info ~ SimpleExpr ~ TypeArguments.? ~ Arguments.+ ~> FApp
     }
 
     def MethodExpr = rule {
-      Proj ~ TypeArguments.? ~ Arguments.+ ~> FMethodApp
+      info ~ Proj ~ TypeArguments.? ~ Arguments.+ ~> FMethodApp
     }
 
-    def Proj = rule { (CallExpr | SimpleExpr) ~ ('.' ~ ExprId).+ ~> FProj }
+    def Proj = rule {
+      info ~ (CallExpr | SimpleExpr) ~ ('.' ~ ExprId).+ ~> FProj
+    }
 
     def PrimaryExpr: Rule1[FInfixExpr] = rule {
       MethodExpr | CallExpr | Proj | SimpleExpr
@@ -192,23 +249,29 @@ class Expressions(val input: ParserInput) extends Types {
   // Literals
   def Literal: Rule1[FLiteral] = rule { Bool | Float | Int | String }
   def Bool = rule {
-    capture("true" | "false") ~> (s => FBool(s.trim().toBoolean))
+    info ~ capture("true" | "false") ~> ((i, s) => FBool(i, s.trim().toBoolean))
   }
   def Float = rule {
-    capture(DecimalInteger ~ '.' ~ CharPredicate.Digit.*) ~> (f =>
-      FFloat(f.toFloat)
+    info ~ capture(DecimalInteger ~ '.' ~ CharPredicate.Digit.*) ~> ((i, f) =>
+      FFloat(i, f.toFloat)
     )
   }
   def DecimalInteger = rule {
     '0' | (CharPredicate.Digit19 ~ CharPredicate.Digit.*)
   }
-  def Int = rule { capture(CharPredicate.Digit.+) ~> (i => FInt(i.toInt)) }
+  def Int = rule {
+    info ~ capture(CharPredicate.Digit.+) ~> ((i, integer) =>
+      FInt(i, integer.toInt)
+    )
+  }
   def String = {
     def Raw = rule(!'\"' ~ ANY)
     rule {
-      '"' ~ capture(Raw.*) ~ '"' ~> FString
+      info ~ '"' ~ capture(Raw.*) ~ '"' ~> FString
     }
   }
 
-  private def ExprId = rule { capture(!Keyword ~ IdentifierPart) ~> FVar }
+  private def ExprId = rule {
+    info ~ capture(!Keyword ~ IdentifierPart) ~> FVar
+  }
 }

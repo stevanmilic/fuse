@@ -1,43 +1,15 @@
 package parser
 
-import cats.Show
 import org.parboiled2._
 
 import scala.language.implicitConversions
+import scala.util.Try
 
 object Identifiers {
   sealed trait FToken
 
   case class FIdentifier(value: String) extends FToken
   case class FIndent(size: Int) extends FToken
-  case class Location(line: Int, column: Int, lineInput: String)
-
-  sealed trait Info
-  case class FileInfo(
-      location: Location,
-      fileName: String
-  ) extends Info
-  case object UnknownInfo extends Info
-
-  implicit val showInfo: Show[Info] =
-    Show.show(info =>
-      info match {
-        case FileInfo(location, fileName) =>
-          val padding = List.fill(location.line.toString().length)(" ").mkString
-          val errorSign = fansi.Bold.On(fansi.Color.LightRed("^"))
-          val errorIndicator =
-            List.fill(location.column - 1)(" ").mkString + errorSign
-          List(
-            s"\n$padding--> ${fileName}:${location.line}:${location.column}",
-            fansi.Bold.On(s"$padding |").toString(),
-            fansi.Bold
-              .On(s"${location.line} |")
-              .toString() + s" ${location.lineInput}",
-            fansi.Bold.On(s"$padding | ").toString() + errorIndicator
-          ).mkString("\n")
-        case UnknownInfo => ""
-      }
-    )
 
   def checkIndents(
       indents: Seq[FIndent],
@@ -59,9 +31,10 @@ object Identifiers {
   }
 }
 
-abstract class Identifiers extends Keywords {
+abstract class Identifiers(fileName: String) extends Keywords {
   import CharPredicate.{AlphaNum}
   import Identifiers._
+  import Info._
 
   implicit def wspStrR(s: String): Rule0 = rule {
     str(s) ~ zeroOrMore(' ')
@@ -72,11 +45,11 @@ abstract class Identifiers extends Keywords {
   }
 
   def loc: Location = {
-    val pos = Position(cursor, input)
-    Location(pos.line, pos.column, input.getLine(pos.line))
+    val Position(_, line, column) = Position(cursor, input)
+    Location(line, column, input.getLine(line))
   }
 
-  def mark = rule { atomic("") ~> (() => loc) }
+  def info = rule { atomic("") ~> (() => FileInfo(loc, fileName)) }
 
   def Id = rule { capture(IdentifierPart) ~> FIdentifier }
   def IdentifierPart = rule { AlphaNum_.+ }

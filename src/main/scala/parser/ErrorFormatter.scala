@@ -2,8 +2,8 @@ package parser
 
 import org.parboiled2._
 import java.lang.{StringBuilder => JStringBuilder}
-import Identifiers.{FileInfo, Location}
 import fuse.Utils.consoleError
+import Info._
 
 class ParserErrorFormatter(fileName: String) extends ErrorFormatter {
 

@@ -42,7 +42,7 @@ object Compiler {
   } yield repr.mkString("\n")
 
   def parse(code: String, fileName: String): Either[Error, Seq[FDecl]] = {
-    val parser = new FuseParser(code)
+    val parser = new FuseParser(code, fileName)
     parser.Module.run() match {
       case Success(result) => Right(result)
       case Failure(e: ParseError) =>
@@ -51,7 +51,10 @@ object Compiler {
     }
   }
 
-  def desugar(decls: List[FDecl], initContext: Context): Either[Error, List[Bind]] =
+  def desugar(
+      decls: List[FDecl],
+      initContext: Context
+  ): Either[Error, List[Bind]] =
     Desugar.process(decls).value.runA(initContext).value
 
   def typeCheck(

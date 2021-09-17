@@ -1,6 +1,6 @@
 package fuse
 
-import parser.Identifiers._
+import parser.Info._
 import cats.implicits._
 
 object Utils {

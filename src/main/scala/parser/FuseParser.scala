@@ -7,16 +7,19 @@ object FuseParser {
   import Identifiers._
   import Types._
   import Expressions.FExpr
+  import Info._
 
   sealed trait FDecl
 
-  case class FPrimitiveTypeDecl(t: FIdentifier) extends FDecl
+  case class FPrimitiveTypeDecl(info: Info, t: FIdentifier) extends FDecl
 
   case class FVariantTypeValue(
+      info: Info,
       v: FIdentifier,
       t: Option[Either[FParams, FTypes]] = None
   )
   case class FVariantTypeDecl(
+      info: Info,
       i: FIdentifier,
       t: FTypeParamClause,
       values: Seq[FVariantTypeValue]
@@ -24,24 +27,28 @@ object FuseParser {
 
   case class FRecordTypeField(p: FParam)
   case class FRecordTypeDecl(
+      info: Info,
       i: FIdentifier,
       t: FTypeParamClause,
       fields: Seq[FRecordTypeField]
   ) extends FDecl
 
   case class FTupleTypeDecl(
+      info: Info,
       i: FIdentifier,
       t: FTypeParamClause,
       types: FTypes
   ) extends FDecl
 
   case class FTypeAlias(
+      info: Info,
       i: FIdentifier,
       tp: FTypeParamClause,
       t: FType
   ) extends FDecl
 
   case class FFuncSig(
+      info: Info,
       i: FIdentifier,
       tp: FTypeParamClause,
       p: Option[FParams],
@@ -54,18 +61,21 @@ object FuseParser {
   ) extends FDecl
 
   case class FTypeFuncDecls(
+      info: Info,
       i: FIdentifier,
       tp: FTypeParamClause,
       f: Seq[FFuncDecl]
   ) extends FDecl
 
   case class FTraitDecl(
+      info: Info,
       i: FIdentifier,
       tp: FTypeParamClause,
       f: Seq[Either[FFuncDecl, FFuncSig]]
   ) extends FDecl
 
   case class FTraitInstance(
+      info: Info,
       type_id: FIdentifier,
       type_tp: FTypeParamClause,
       trait_id: FIdentifier,
@@ -73,9 +83,22 @@ object FuseParser {
       f: Seq[FFuncDecl]
   ) extends FDecl
 
+  implicit val showDeclInfo: ShowInfo[FDecl] = ShowInfo.info(_ match {
+    case FPrimitiveTypeDecl(info, _)              => info
+    case FVariantTypeDecl(info, _, _, _)          => info
+    case FRecordTypeDecl(info, _, _, _)           => info
+    case FTupleTypeDecl(info, _, _, _)            => info
+    case FTypeAlias(info, _, _, _)                => info
+    case FFuncDecl(FFuncSig(info, _, _, _, _), _) => info
+    case FTypeFuncDecls(info, _, _, _)            => info
+    case FTraitDecl(info, _, _, _)                => info
+    case FTraitInstance(info, _, _, _, _, _)      => info
+
+  })
 }
 
-class FuseParser(val input: ParserInput) extends Types {
+class FuseParser(val input: ParserInput, fileName: String)
+    extends Expressions(fileName) {
   import FuseParser._
   import Identifiers._
   import Types._
@@ -94,7 +117,7 @@ class FuseParser(val input: ParserInput) extends Types {
       TypeFuncDecls
   }
 
-  def TypeDecl = rule { "type" ~ Id }
+  def TypeDecl = rule { "type" ~ info ~ Id }
   def PrimitiveTypeDecl = rule { TypeDecl ~> FPrimitiveTypeDecl }
 
   def VariantTypeDecl = {
@@ -103,7 +126,7 @@ class FuseParser(val input: ParserInput) extends Types {
     }
 
     val VariantTypeValue = () =>
-      rule { Id ~ VariantTypeValueArgs.? ~> FVariantTypeValue }
+      rule { info ~ Id ~ VariantTypeValueArgs.? ~> FVariantTypeValue }
 
     rule {
       TypeDecl ~ TypeParamClause.? ~ ":" ~ oneOrMoreWithIndent(
@@ -131,12 +154,11 @@ class FuseParser(val input: ParserInput) extends Types {
 
   def FuncSig = {
     rule {
-      "fun" ~ Id ~ TypeParamClause.? ~ "(" ~ Params.? ~ ")" ~ "->" ~ Type ~> FFuncSig
+      "fun" ~ info ~ Id ~ TypeParamClause.? ~ "(" ~ Params.? ~ ")" ~ "->" ~ Type ~> FFuncSig
     }
   }
 
   def FuncDecl = {
-    def BlockExpr = rule { runSubParser(new Expressions(_).BlockExpr) }
     rule {
       FuncSig ~ BlockExpr ~> FFuncDecl
     }
@@ -146,7 +168,9 @@ class FuseParser(val input: ParserInput) extends Types {
     val TraitFunc = () =>
       rule { FuncSig ~ ";" ~> (Right(_)) | FuncDecl ~> (Left(_)) }
     rule {
-      "trait" ~ Id ~ TypeParamClause.? ~ ":" ~ oneOrMoreWithIndent(TraitFunc) ~>
+      "trait" ~ info ~ Id ~ TypeParamClause.? ~ ":" ~ oneOrMoreWithIndent(
+        TraitFunc
+      ) ~>
         FTraitDecl
     }
   }
@@ -154,11 +178,13 @@ class FuseParser(val input: ParserInput) extends Types {
   val TypeFunc = () => FuncDecl
   def ImplFuncDecls = oneOrMoreWithIndent(TypeFunc)
   def TraitInstance = rule {
-    "impl" ~ Id ~ TypeParamClause.? ~ wspStr("for") ~ Id ~ TypeParamClause.? ~
+    "impl" ~ info ~ Id ~ TypeParamClause.? ~ wspStr(
+      "for"
+    ) ~ Id ~ TypeParamClause.? ~
       ':' ~ ImplFuncDecls ~> FTraitInstance
   }
 
   def TypeFuncDecls = rule {
-    "impl" ~ Id ~ TypeParamClause.? ~ ":" ~ ImplFuncDecls ~> FTypeFuncDecls
+    "impl" ~ info ~ Id ~ TypeParamClause.? ~ ":" ~ ImplFuncDecls ~> FTypeFuncDecls
   }
 }

@@ -8,7 +8,7 @@ import cats.implicits._
 import core.Context._
 import core.Shifting._
 import parser.FuseParser._
-import parser.Identifiers.UnknownInfo
+import parser.Info._
 
 import scala.annotation.tailrec
 import scala.util._

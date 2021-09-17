@@ -5,7 +5,7 @@ import cats.data.State
 import cats.implicits._
 import core.Context._
 import fuse.Utils.consoleError
-import parser.Identifiers._
+import parser.Info._
 
 sealed trait TypeError
 

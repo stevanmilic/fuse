@@ -5,7 +5,7 @@ import cats.data.OptionT
 import cats.data.State
 import cats.data.StateT
 import cats.implicits._
-import parser.Identifiers.UnknownInfo
+import parser.Info._
 
 import scala.util._
 

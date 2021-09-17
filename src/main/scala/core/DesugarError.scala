@@ -5,7 +5,7 @@ import cats.data.State
 import cats.implicits._
 import core.Context._
 import fuse.Utils.consoleError
-import parser.Identifiers._
+import parser.Info._
 
 sealed trait DesugarError
 
@@ -29,14 +29,14 @@ object DesugarError {
       case ExpressionNotSupportedDesugarError(info) =>
         consoleError("expression not supported", info)
       case DeclarationNotSupportedDesugarError(info) =>
-        consoleError("expression not supported", info)
+        consoleError("declaration not supported", info)
       case VariableNotFoundDesugarError(info, variable) =>
         consoleError(s"cannot find variable `$variable` in this scope", info)
       case FunctionOperatorNotFoundDesugarError(info, func) =>
         consoleError(s"function operator `$func` not found", info)
       case ExpressionNotValidDesugarError(info) =>
         consoleError(
-          s"consecutive non-binding expressions not allowed, bind expression value with `let` binding first",
+          s"expression value not used, assign the value with `let` binding",
           info
         )
       case CaseNotSupportedDesugarError(info) =>
