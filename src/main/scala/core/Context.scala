@@ -56,7 +56,7 @@ object Context {
     EitherT { State(ctx => (ctx, state.value.runA(ctx).value)) }
 
   def getType(info: Info, idx: Int): StateEither[Type] =
-    getBinding(idx).flatMap[Error, Type](_ match {
+    getBinding(info, idx).flatMap[Error, Type](_ match {
       case VarBind(ty)              => EitherT.rightT(ty)
       case TermAbbBind(_, Some(ty)) => EitherT.rightT(ty)
       case TermAbbBind(_, None) =>
@@ -65,11 +65,11 @@ object Context {
         TypeError.format(WrongBindingForVariableTypeError(info, idx))
     })
 
-  def getBinding(idx: Int): StateEither[Binding] =
+  def getBinding(info: Info, idx: Int): StateEither[Binding] =
     EitherT
       .liftF(State.inspect { (ctx: Context) => ctx.lift(idx) })
       .flatMap(_ match {
         case Some((_, b)) => bindingShift(idx + 1, b).pure[StateEither]
-        case _            => TypeError.format(BindingNotFoundTypeError(UnknownInfo))
+        case _            => TypeError.format(BindingNotFoundTypeError(info))
       })
 }

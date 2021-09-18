@@ -13,35 +13,35 @@ object Representation {
       buildContext: Boolean = false
   ): StateEither[String] =
     t match {
-      case TypeVar(idx, n) =>
+      case TypeVar(_, idx, n) =>
         EitherT(State.inspect { ctx =>
           Context
             .indexToName(ctx, idx)
             .toRight("Repr: Type variable not found.")
         })
-      case TypeId(id) => id.pure[StateEither]
-      case TypeAbs(typeVar, ty) =>
+      case TypeId(_, id) => id.pure[StateEither]
+      case TypeAbs(_, typeVar, ty) =>
         for {
           _ <- addNameToContext(typeVar, buildContext)
           ty1 <- Context.runE(typeToString(ty, buildContext))
         } yield s"λ $typeVar. $ty1"
-      case TypeArrow(t1, t2) =>
+      case TypeArrow(_, t1, t2) =>
         for {
           s1 <- typeToString(t1, buildContext)
           s2 <- typeToString(t2, buildContext)
         } yield s"$s1 -> $s2"
-      case TypeAll(typeVar, kind, ty) =>
+      case TypeAll(_, typeVar, kind, ty) =>
         for {
           _ <- addNameToContext(typeVar, buildContext)
           k1 <- kindToString(kind).pure[StateEither]
           ty1 <- Context.runE(typeToString(ty, buildContext))
         } yield s"[$typeVar::$k1] $ty1"
-      case TypeApp(ty1, ty2) =>
+      case TypeApp(_, ty1, ty2) =>
         for {
           ty1s <- typeToString(ty1, buildContext)
           ty2s <- typeToString(ty2, buildContext)
         } yield s"$ty1s[$ty2s]"
-      case TypeRecord(fields) =>
+      case TypeRecord(_, fields) =>
         fields
           .traverse { case (fieldName, ty) =>
             typeToString(ty, buildContext).map(typeString =>
@@ -49,7 +49,7 @@ object Representation {
             )
           }
           .map(fieldTypes => s"{${fieldTypes.mkString(", ")}}")
-      case TypeVariant(fields) =>
+      case TypeVariant(_, fields) =>
         fields
           .traverse { case (fieldName, ty) =>
             typeToString(ty, buildContext).map(typeString =>
@@ -57,16 +57,16 @@ object Representation {
             )
           }
           .map(fieldTypes => s"${fieldTypes.mkString(" | ")}")
-      case TypeRec(tyX, _, ty) =>
+      case TypeRec(_, tyX, _, ty) =>
         for {
           _ <- addNameToContext(tyX.stripPrefix("@"), buildContext)
           ty1 <- typeToString(ty, buildContext)
         } yield ty1
-      case TypeUnit   => "()".pure[StateEither]
-      case TypeInt    => "i32".pure[StateEither]
-      case TypeFloat  => "f32".pure[StateEither]
-      case TypeString => "str".pure[StateEither]
-      case TypeBool   => "bool".pure[StateEither]
+      case TypeUnit(_)   => "()".pure[StateEither]
+      case TypeInt(_)    => "i32".pure[StateEither]
+      case TypeFloat(_)  => "f32".pure[StateEither]
+      case TypeString(_) => "str".pure[StateEither]
+      case TypeBool(_)   => "bool".pure[StateEither]
     }
 
   def addNameToContext(name: String, skip: Boolean): StateEither[String] =

@@ -9,20 +9,37 @@ object Types {
 
   sealed trait Type
 
-  case class TypeVar(index: Integer, length: Integer) extends Type
-  case class TypeId(i: String) extends Type
-  case class TypeArrow(t1: Type, t2: Type) extends Type
-  case object TypeUnit extends Type
-  case class TypeRecord(f: List[(String, Type)]) extends Type
-  case class TypeVariant(v: List[(String, Type)]) extends Type
-  case class TypeRec(v: String, k: Kind, t: Type) extends Type
-  case class TypeAll(i: String, k: Kind, t: Type) extends Type
-  case class TypeAbs(i: String, t: Type) extends Type
-  case class TypeApp(t1: Type, t2: Type) extends Type
-  case object TypeBool extends Type
-  case object TypeString extends Type
-  case object TypeFloat extends Type
-  case object TypeInt extends Type
+  case class TypeVar(info: Info, index: Integer, length: Integer) extends Type
+  case class TypeId(info: Info, i: String) extends Type
+  case class TypeArrow(info: Info, t1: Type, t2: Type) extends Type
+  case class TypeUnit(info: Info) extends Type
+  case class TypeRecord(info: Info, f: List[(String, Type)]) extends Type
+  case class TypeVariant(info: Info, v: List[(String, Type)]) extends Type
+  case class TypeRec(info: Info, v: String, k: Kind, t: Type) extends Type
+  case class TypeAll(info: Info, i: String, k: Kind, t: Type) extends Type
+  case class TypeAbs(info: Info, i: String, t: Type) extends Type
+  case class TypeApp(info: Info, t1: Type, t2: Type) extends Type
+  case class TypeBool(info: Info) extends Type
+  case class TypeString(info: Info) extends Type
+  case class TypeFloat(info: Info) extends Type
+  case class TypeInt(info: Info) extends Type
+
+  implicit val showTypeInfo: ShowInfo[Type] = ShowInfo.info(_ match {
+    case TypeVar(info, _, _) => info
+    case TypeId(info, _) => info
+    case TypeArrow(info, _, _) => info
+    case TypeUnit(info) => info
+    case TypeRecord(info, _) => info
+    case TypeVariant(info, _) => info
+    case TypeRec(info, _, _, _) => info
+    case TypeAll(info, _, _, _) => info
+    case TypeAbs(info, _, _) => info
+    case TypeApp(info, _, _) => info
+    case TypeBool(info) => info
+    case TypeString(info) => info
+    case TypeFloat(info) => info
+    case TypeInt(info) => info
+  })
 }
 
 object Terms {

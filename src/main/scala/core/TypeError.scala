@@ -157,7 +157,7 @@ case class TagFieldMismatchTypeError(
     code: String = "E0022"
 ) extends TypeError
 
-case class NoTypArgumentsTypeError(
+case class NoTypeArgumentsTypeError(
     info: Info,
     ty: Type,
     code: String = "E0023"
@@ -291,10 +291,10 @@ object TypeError {
         ).pure[StateEither]
       case WrongReturnTypeError(info, termType, expectedType, code) =>
         for {
-          termTypeName <- Representation.typeToString(termType)
           expectedTypeName <- Representation.typeToString(expectedType)
+          termTypeName <- Representation.typeToString(termType, true)
         } yield consoleError(
-          s"expected `$expectedTypeName` return type, found `$termTypeName`",
+          s"expected `$expectedTypeName` return type, found `$termTypeName` in function expression",
           info,
           Some(code)
         )
@@ -415,7 +415,7 @@ object TypeError {
               Some(code)
             )
           )
-      case NoTypArgumentsTypeError(info, ty, code) =>
+      case NoTypeArgumentsTypeError(info, ty, code) =>
         Representation
           .typeToString(ty)
           .map(name =>
