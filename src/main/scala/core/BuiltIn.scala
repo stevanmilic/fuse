@@ -1,5 +1,9 @@
 package core
 
+import core.Bindings._
+import core.Terms._
+import core.Types._
+
 object BuiltIn {
   val Functions = List(
     Bind(

@@ -1,5 +1,8 @@
 package core
 
+import core.Bindings._
+import core.Types._
+
 object Shifting {
 
   type ShiftVarFunc = (Int, Int, Int) => Type

@@ -3,6 +3,7 @@ package core
 import cats.data.EitherT
 import cats.data.State
 import cats.implicits._
+import core.Types._
 
 import Context._
 

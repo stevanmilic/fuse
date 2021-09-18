@@ -5,10 +5,14 @@ import cats.data.OptionT
 import cats.data.State
 import cats.data.StateT
 import cats.implicits._
+import core.Bindings._
 import core.Context._
 import core.Shifting._
+import core.Terms._
+import core.Types._
 import parser.FuseParser._
 import parser.Info._
+import parser.Info.ShowInfo._
 
 import scala.annotation.tailrec
 import scala.util._
@@ -31,6 +35,7 @@ object TypeChecker {
       pureKindOf(ty).map(k => TypeAbbBind(ty, Some(k)))
     case TermAbbBind(term, None) =>
       pureTypeOf(term).map(ty => TermAbbBind(term, Some(ty)))
+    case _ => EitherT.rightT(b)
 
   }
 
@@ -226,8 +231,7 @@ object TypeChecker {
                     exprType,
                     ty,
                     MatchTypeMismatchPatternTypeError(
-                      // v._2.info,
-                      UnknownInfo,
+                      v._1.info,
                       ty1,
                       ty
                     )
@@ -235,22 +239,22 @@ object TypeChecker {
                 )
                 .getOrElse(EitherT.pure[ContextState, Error](()))
               caseExprType <- pureTypeOf(v._2)
-            } yield typeShift(-patternTypeInfo._2, caseExprType)
+            } yield (typeShift(-patternTypeInfo._2, caseExprType), v._2.info)
           )
         }
         // Finally, check if all the case expressions have the same type.
         caseExprType <- caseExprTypes
-          .traverse(caseExprType =>
+          .traverse{ case(caseExprType, info) =>
             isTypeEqualWithTypeError(
               caseExprType,
-              caseExprTypes.head,
+              caseExprTypes.head._1,
               MatchCasesTypeError(
                 info,
                 caseExprType,
-                caseExprTypes.head
+                caseExprTypes.head._1
               )
             )
-          )
+          }
           .map(_.head)
       } yield caseExprType
     case TermTag(info, tag, t1, ty1) =>

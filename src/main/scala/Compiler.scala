@@ -4,6 +4,7 @@ import cats.data.EitherT
 import cats.data.State
 import cats.effect.IO
 import cats.implicits._
+import core.Bindings._
 import core.Context._
 import core._
 import org.parboiled2._

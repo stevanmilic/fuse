@@ -5,6 +5,9 @@ import cats.data.OptionT
 import cats.data.State
 import cats.data.StateT
 import cats.implicits._
+import core.Bindings._
+import core.Terms._
+import core.Types._
 import parser.Info._
 
 import scala.util._

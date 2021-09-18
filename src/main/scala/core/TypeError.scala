@@ -4,6 +4,8 @@ import cats.data.EitherT
 import cats.data.State
 import cats.implicits._
 import core.Context._
+import core.Terms._
+import core.Types._
 import fuse.Utils.consoleError
 import parser.Info._
 
