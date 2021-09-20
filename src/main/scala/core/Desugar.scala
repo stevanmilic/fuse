@@ -135,7 +135,8 @@ object Desugar {
             // should be added to the last nested abstraction, since that one
             // is returning the value for the function.
             returnType <-
-              if (index == params.length - 1) toType(sig.r).map(Some(_)) else None.pure[StateEither]
+              if (index == params.length - 1) toType(sig.r).map(Some(_))
+              else None.pure[StateEither]
             term <- acc
           } yield TermAbs(sig.info, variable, typ, term, returnType)
         }
@@ -241,24 +242,22 @@ object Desugar {
             )
         } yield computedTerm
       case FAbs(info, bindings, Some(rType), expr) =>
-        letVariable match {
+        Context.runE(letVariable match {
           case Some((f, _)) =>
-            val closure =
+            withFixCombinator(
+              info,
+              f,
+              bindings.map(_.t.get).toList,
+              rType,
               withClosure(info, bindings.toList, toTermExpr(expr.toList))
-            Context.runE(
-              withFixCombinator(
-                info,
-                f,
-                bindings.map(_.t.get).toList,
-                rType,
-                closure
-              )
             )
           case _ =>
             withClosure(info, bindings.toList, toTermExpr(expr.toList))
-        }
+        })
       case FAbs(info, bindings, _, expr) =>
-        withClosure(info, bindings.toList, toTermExpr(expr.toList))
+        Context.runE(
+          withClosure(info, bindings.toList, toTermExpr(expr.toList))
+        )
       case FMultiplication(i1, i2) =>
         toTermOperator("&multiply", i1, i2)
       // TODO: Add other operators.
@@ -295,12 +294,15 @@ object Desugar {
       params: List[FBinding],
       body: StateEither[Term]
   ): StateEither[Term] =
-    params.foldRight(body) { case (FBinding(_, i, Some(t)), acc) =>
-      for {
-        typ <- toType(t)
-        v <- EitherT.liftF(Context.addName(i.value))
-        term <- acc
-      } yield TermClosure(info, v, Some(typ), term)
+    params.foldRight(body) {
+      case (FBinding(_, i, Some(t)), acc) =>
+        for {
+          typ <- toType(t)
+          v <- EitherT.liftF(Context.addName(i.value))
+          term <- acc
+        } yield TermClosure(info, v, Some(typ), term)
+      case (FBinding(info, _, _), _) =>
+        DesugarError.format(TypeAnnotationRequiredDesugarError(info))
     }
 
   def withFixCombinator(

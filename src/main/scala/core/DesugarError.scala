@@ -12,6 +12,7 @@ sealed trait DesugarError
 
 case class TypeNotSupportedDesugarError(info: Info) extends DesugarError
 case class ExpressionNotSupportedDesugarError(info: Info) extends DesugarError
+case class TypeAnnotationRequiredDesugarError(info: Info) extends DesugarError
 case class DeclarationNotSupportedDesugarError(info: Info) extends DesugarError
 case class VariableNotFoundDesugarError(info: Info, variable: String)
     extends DesugarError
@@ -31,6 +32,8 @@ object DesugarError {
         consoleError("type not supported", info)
       case ExpressionNotSupportedDesugarError(info) =>
         consoleError("expression not supported", info)
+      case TypeAnnotationRequiredDesugarError(info) =>
+        consoleError("type annotation required", info)
       case DeclarationNotSupportedDesugarError(info) =>
         consoleError("declaration not supported", info)
       case VariableNotFoundDesugarError(info, variable) =>
