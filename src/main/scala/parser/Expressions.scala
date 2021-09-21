@@ -133,10 +133,13 @@ abstract class Expressions(fileName: String) extends Types(fileName) {
   import Expressions._
   import Identifiers._
 
-  def BlockExpr = oneOrMoreWithIndent(ExprVal)
+  def BlockExpr = oneOrMoreWithIndent(ExprVal, "expression")
   val ExprVal = () => Expr
   def Expr: Rule1[FExpr] = rule {
-    LetExpr | LambdaExpr | MatchExpr | InfixExpr
+    LetExpr.named("let expression") |
+      LambdaExpr.named("lambda expression") |
+      MatchExpr.named("match expression") |
+      InfixExpr.named("infix expression")
   }
 
   def InlineExpr: Rule1[Seq[FExpr]] = {
@@ -149,63 +152,75 @@ abstract class Expressions(fileName: String) extends Types(fileName) {
         }
       )
     }
-    rule { LambdaExpr ~> (Seq(_)) | InfixExpr ~> (Seq(_)) | InlineBlockExpr }
+    rule {
+      LambdaExpr.named("lambda expression") ~> (Seq(_)) |
+        InfixExpr.named("infix expression") ~> (Seq(_)) | InlineBlockExpr
+    }
   }
   def LetExpr = rule {
-    info ~ "let" ~ Id ~ (":" ~ Type).? ~ wspStr("=") ~ InlineExpr ~> FLetExpr
+    info ~ `let` ~ identifier ~ (`:` ~ `Type`).? ~ `=` ~ InlineExpr ~> FLetExpr
   }
   def LambdaExpr = {
-    def Binding = rule { info ~ Id ~ (":" ~ Type).? ~> FBinding }
+    def Binding = rule { info ~ identifier ~ (`:` ~ `Type`).? ~> FBinding }
     def Bindings = rule { '(' ~ Binding.*(",") ~ ')' }
-    def ReturnType = rule { wspStr("->") ~ Type }
+    def ReturnType = rule { `->` ~ Type }
     rule {
-      info ~ (Bindings | info ~ Id ~> ((i, id) =>
+      info ~ (Bindings | info ~ identifier ~> ((i, id) =>
         Seq(FBinding(i, id))
-      )) ~ ReturnType.? ~ wspStr("=>") ~ InlineExpr ~> FAbs
+      )) ~ ReturnType.? ~ `=>` ~ InlineExpr ~> FAbs
     }
   }
 
   def MatchExpr = {
     def Pattern: Rule1[FPattern] = rule {
-      info ~ Id ~ "(" ~ Patterns ~ ")" ~> FVariantOrRecordPattern |
-        info ~ "(" ~ Patterns ~ ")" ~> FTuplePattern |
-        Literal |
-        info ~ capture("_") ~> ((i, _) => FWildCardPattern(i)) |
-        info ~ capture(IdentifierPart) ~ (wspStr("@") ~ Pattern).? ~>
+      info ~ identifier ~ '(' ~ Patterns ~ ')' ~> FVariantOrRecordPattern |
+        info ~ '(' ~ Patterns ~ ')' ~> FTuplePattern |
+        Literal.named("literal") |
+        info ~ capture('_') ~> ((i, _) => FWildCardPattern(i)) |
+        info ~ capture(
+          IdentifierPart.named("identifier")
+        ) ~ (`@` ~ Pattern).? ~>
         FIdentifierPattern
     }
     def Patterns = rule {
-      Pattern.*(",")
+      Pattern.*(',')
     }
-    def Guard = rule { wspStr("if") ~ InfixExpr }
+    def Guard = rule { `if` ~ InfixExpr }
     def ArmPatterns = rule {
       Pattern.+("|")
     }
     def Case = () =>
       rule {
-        info ~ ArmPatterns ~ Guard.? ~ wspStr("=>") ~ InlineExpr ~> FCase
+        info ~ ArmPatterns ~ Guard.? ~ `=>` ~ InlineExpr ~> FCase
       }
     rule {
-      info ~ "match" ~ InfixExpr ~ ":" ~ oneOrMoreWithIndent(Case) ~> FMatch
+      info ~ `match` ~ InfixExpr ~ ':' ~ oneOrMoreWithIndent(
+        Case,
+        "case"
+      ) ~> FMatch
     }
   }
 
   def InfixExpr: Rule1[FInfixExpr] = {
     def SimpleExpr = rule {
-      Literal | ExprId | wspStr("(") ~ InfixExpr ~ wspStr(")")
+      Literal | ExprId | '(' ~ InfixExpr ~ ')'
     }
 
     def ArgumentExpr = rule { LambdaExpr | InfixExpr }
-    def ArgumentList = rule { ArgumentExpr.+(",") }
-    def Arguments = rule { "(" ~ ArgumentList.? ~ ")" }
-    def TypeArguments = rule { "[" ~ Type.+(",") ~ "]" }
+    def ArgumentList = rule { ArgumentExpr.+(',') }
+    def Arguments = rule { '(' ~ ArgumentList.? ~ ')' }
+    def TypeArguments = rule { '[' ~ Type.named("type").+(',') ~ ']' }
 
     def CallExpr = rule {
-      info ~ SimpleExpr ~ TypeArguments.? ~ Arguments.+ ~> FApp
+      info ~ SimpleExpr ~ TypeArguments.named("type arguments").? ~ Arguments
+        .named("arguments")
+        .+ ~> FApp
     }
 
     def MethodExpr = rule {
-      info ~ Proj ~ TypeArguments.? ~ Arguments.+ ~> FMethodApp
+      info ~ Proj ~ TypeArguments.named("type arguments").? ~ Arguments
+        .named("arguments")
+        .+ ~> FMethodApp
     }
 
     def Proj = rule {
@@ -217,30 +232,30 @@ abstract class Expressions(fileName: String) extends Types(fileName) {
     }
 
     def MultiplicativeExpr = rule {
-      PrimaryExpr ~ (wspStr("*") ~ PrimaryExpr ~> FMultiplication |
-        wspStr("/") ~ PrimaryExpr ~> FDivision |
-        wspStr("%") ~ PrimaryExpr ~> FModulo).*
+      PrimaryExpr ~ (`*` ~ PrimaryExpr ~> FMultiplication |
+        `/` ~ PrimaryExpr ~> FDivision |
+        `%` ~ PrimaryExpr ~> FModulo).*
     }
     def AdditiveExpr = rule {
-      MultiplicativeExpr ~ (wspStr("+") ~ MultiplicativeExpr ~> FAddition |
-        wspStr("-") ~ MultiplicativeExpr ~> FSubtraction).*
+      MultiplicativeExpr ~ (`+ ` ~ MultiplicativeExpr ~> FAddition |
+        `- ` ~ MultiplicativeExpr ~> FSubtraction).*
     }
     def RelationExpr = rule {
-      AdditiveExpr ~ (wspStr("<=") ~ AdditiveExpr ~> FLessThanEqual |
-        wspStr(">=") ~ AdditiveExpr ~> FGreaterThanEqual |
-        wspStr("<") ~ AdditiveExpr ~> FLessThan |
-        wspStr(">") ~ AdditiveExpr ~> FGreaterThan).*
+      AdditiveExpr ~ (`<=` ~ AdditiveExpr ~> FLessThanEqual |
+        `>=` ~ AdditiveExpr ~> FGreaterThanEqual |
+        `<` ~ AdditiveExpr ~> FLessThan |
+        `>` ~ AdditiveExpr ~> FGreaterThan).*
 
     }
     def EqualityExpr = rule {
-      RelationExpr ~ (wspStr("==") ~ RelationExpr ~> FEquality |
-        wspStr("!=") ~ RelationExpr ~> FNotEquality).*
+      RelationExpr ~ (`==` ~ RelationExpr ~> FEquality |
+        `!=` ~ RelationExpr ~> FNotEquality).*
     }
     def LogicalAnd = rule {
-      EqualityExpr ~ (wspStr("&&") ~ EqualityExpr ~> FAnd).*
+      EqualityExpr ~ (`&&` ~ EqualityExpr ~> FAnd).*
     }
     def LogicalOr = rule {
-      LogicalAnd ~ (wspStr("||") ~ LogicalAnd ~> FOr).*
+      LogicalAnd ~ (`||` ~ LogicalAnd ~> FOr).*
     }
 
     LogicalOr
@@ -249,7 +264,7 @@ abstract class Expressions(fileName: String) extends Types(fileName) {
   // Literals
   def Literal: Rule1[FLiteral] = rule { Bool | Float | Int | String }
   def Bool = rule {
-    info ~ capture("true" | "false") ~> ((i, s) => FBool(i, s.trim().toBoolean))
+    info ~ capture(`true` | `false`) ~> ((i, s) => FBool(i, s.trim().toBoolean))
   }
   def Float = rule {
     info ~ capture(DecimalInteger ~ '.' ~ CharPredicate.Digit.*) ~> ((i, f) =>
@@ -272,6 +287,6 @@ abstract class Expressions(fileName: String) extends Types(fileName) {
   }
 
   private def ExprId = rule {
-    info ~ capture(!Keyword ~ IdentifierPart) ~> FVar
+    info ~ quiet(Spacing.*) ~ capture(!Keyword ~ IdentifierPart) ~> FVar
   }
 }

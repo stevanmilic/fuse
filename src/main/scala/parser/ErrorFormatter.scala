@@ -22,4 +22,20 @@ class ParserErrorFormatter(fileName: String) extends ErrorFormatter {
       )
     )
   }
+
+  override def formatNonTerminal(
+      nonTerminal: RuleTrace.NonTerminal,
+      showFrameStartOffset: Boolean = true
+  ): String =
+    camelCaseToWords(super.formatNonTerminal(nonTerminal, showFrameStartOffset))
+
+  override def formatTerminal(terminal: RuleTrace.Terminal): String =
+    camelCaseToWords(super.formatTerminal(terminal))
+
+  private def camelCaseToWords(name: String) = name
+    .replaceAll(
+      "([a-z])([A-Z]+)",
+      "$1 $2"
+    )
+    .toLowerCase()
 }

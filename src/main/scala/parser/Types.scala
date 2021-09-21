@@ -40,29 +40,36 @@ abstract class Types(fileName: String) extends Identifiers(fileName) {
   import Types._
 
   // Type Definitions
-  def TypeParam = rule { info ~ Id ~ (wspStr("=") ~ Type).? ~> FTypeParam }
-  def TypeParamClause = rule { "[" ~ TypeParam.+(",") ~ "]" }
+  def TypeParam = rule {
+    info ~ identifier ~ (`=` ~ Type.named("type")).? ~> FTypeParam
+  }
+  def TypeParamClause = rule { '[' ~ TypeParam.+(',') ~ ']' }
 
   def Type: Rule1[FType] = rule {
-    FuncType | TupleType | SimpleType
+    FuncType.named("function type") | TupleType.named("tuple type") | SimpleType
+      .named("type")
   }
+
   def FuncType = {
     def FuncArgs = rule {
-      SimpleType ~> (Seq(_)) | "(" ~ SimpleType.*(",") ~ ")"
+      SimpleType
+        .named("type") ~> (Seq(_)) | '(' ~ SimpleType.named("type").*(',') ~ ')'
     }
     rule {
-      info ~ FuncArgs ~ wspStr("->") ~ Type ~> FFuncType
+      info ~ FuncArgs ~ `->` ~ Type ~> FFuncType
     }
   }
   def TupleType = rule {
-    info ~ "(" ~ Type.*(",") ~ ")" ~> FTupleType
+    info ~ '(' ~ Type.*(',') ~ ')' ~> FTupleType
   }
   def SimpleType = rule {
-    info ~ Id ~ TypeArgs.? ~> FSimpleType
+    info ~ identifier ~ TypeArgs.? ~> FSimpleType
   }
-  def TypeList = rule { Type.+(",") }
-  def TypeArgs = rule { "[" ~ TypeList ~ "]" }
+  def TypeList = rule { Type.+(',') }
+  def TypeArgs = rule { '[' ~ TypeList.named("types") ~ ']' }
 
-  def Param = rule { info ~ Id ~ ":" ~ Type ~> FParam }
-  def Params = rule { Param.+(",") }
+  def param = rule {
+    info ~ identifier ~ `:` ~ Type.named("type") ~> FParam
+  }
+  def params = rule { param.+(',') }
 }

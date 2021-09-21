@@ -36,14 +36,6 @@ abstract class Identifiers(fileName: String) extends Keywords {
   import Identifiers._
   import Info._
 
-  implicit def wspStrR(s: String): Rule0 = rule {
-    str(s) ~ zeroOrMore(' ')
-  }
-
-  def wspStr(s: String): Rule0 = rule {
-    zeroOrMore(' ') ~ wspStrR(s)
-  }
-
   def loc: Location = {
     val Position(_, line, column) = Position(cursor, input)
     Location(line, column, input.getLine(line))
@@ -51,11 +43,12 @@ abstract class Identifiers(fileName: String) extends Keywords {
 
   def info = rule { atomic("") ~> (() => FileInfo(loc, fileName)) }
 
-  def Id = rule { capture(IdentifierPart) ~> FIdentifier }
-  def IdentifierPart = rule { AlphaNum_.+ }
+  def identifier = rule {
+    quiet(Spacing.*) ~ capture(IdentifierPart) ~> FIdentifier
+  }
+  def IdentifierPart = rule { AlphaNum_.named("alphanumeric").+ }
   def NewLine = rule(quiet('\r'.? ~ '\n'))
-  def Indent = rule { capture(Spacing.+) ~> (s => FIndent(s.size)) }
-  def Spacing = rule { ch('\t') | ch(' ') }
+  def Indent = rule { quiet(capture(Spacing.+)) ~> (s => FIndent(s.size)) }
   def WL = rule(quiet((Spacing | NewLine).*))
 
   // Meta rule that matches one or more indented lines with the specified
@@ -63,13 +56,18 @@ abstract class Identifiers(fileName: String) extends Keywords {
   // rule.  It's best to pass the a `val` member to the function in order to
   // prevent the re-allocation during every execution of the meta rule.
   // More info: https://github.com/sirthias/parboiled2#meta-rules
-  def oneOrMoreWithIndent[T](r: () => Rule1[T]): Rule1[Seq[T]] = rule {
-    (NewLine.+ ~ Indent ~ r() ~> ((_, _))).+ ~> ((lines: Seq[(FIndent, T)]) => {
-      val (indents, nodes) = lines.unzip
-      validateIndents(indents) ~ push(nodes) | failX(
-        "correctly indented block"
-      )
-    })
+  def oneOrMoreWithIndent[T](
+      r: () => Rule1[T],
+      ruleName: String
+  ): Rule1[Seq[T]] = rule {
+    (NewLine.+ ~ Indent ~ r().named(ruleName) ~> ((_, _))).+ ~> (
+      (lines: Seq[(FIndent, T)]) => {
+        val (indents, nodes) = lines.unzip
+        validateIndents(indents) ~ push(nodes) | failX(
+          "correctly indented block"
+        )
+      }
+    )
   }
 
   // Checks if the indents are correctly aligned in respect to any indentation
@@ -87,5 +85,4 @@ abstract class Identifiers(fileName: String) extends Keywords {
         )
       )
     }
-
 }

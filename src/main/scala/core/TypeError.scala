@@ -208,7 +208,7 @@ object TypeError {
         )
       case VariableNotFunctionTypeError(info, termType, code) =>
         Representation
-          .typeToString(termType)
+          .typeToString(termType, true)
           .map(name =>
             consoleError(
               s"expected function, found `$name`",

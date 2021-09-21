@@ -11,7 +11,7 @@
 
 - [x] Fuse Parser
 - [x] Type Checker for System F with ADT and Pattern Matching
-- [ ] Improve Type Error Messages
+- [x] Improve Type Error Messages
 - [ ] Code Generation to LLVM
 - [ ] Implement Type Inference (HM or Bidirectional)
 - [ ] Add modules & imports
