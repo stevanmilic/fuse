@@ -104,7 +104,7 @@ class FuseParser(val input: ParserInput, fileName: String)
   import Types._
   import Expressions.FExpr
 
-  def Module = rule { Decl.+(NewLine.+) ~ quiet(WL) ~ quiet(EOI) }
+  def Module = rule { Decl.+((NewLine | Comment).+) ~ quiet(WL) ~ quiet(EOI) }
   def Decl: Rule1[FDecl] = rule {
     RecordTypeDecl.named("record") |
       VariantTypeDecl.named("variant") |

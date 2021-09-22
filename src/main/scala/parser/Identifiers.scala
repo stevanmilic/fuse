@@ -36,6 +36,10 @@ abstract class Identifiers(fileName: String) extends Keywords {
   import Identifiers._
   import Info._
 
+  implicit def any(s: String): Rule0 = rule {
+    str(s) ~ quiet(Spacing.*)
+  }
+
   def loc: Location = {
     val Position(_, line, column) = Position(cursor, input)
     Location(line, column, input.getLine(line))
@@ -51,6 +55,8 @@ abstract class Identifiers(fileName: String) extends Keywords {
   def Indent = rule { quiet(capture(Spacing.+)) ~> (s => FIndent(s.size)) }
   def WL = rule(quiet((Spacing | NewLine).*))
 
+  def Comment = rule { '#' ~ (!NewLine ~ ANY).* }
+
   // Meta rule that matches one or more indented lines with the specified
   // rule. Accepts a `Function0` argument to prevent expansion of the passed
   // rule.  It's best to pass the a `val` member to the function in order to
@@ -60,7 +66,7 @@ abstract class Identifiers(fileName: String) extends Keywords {
       r: () => Rule1[T],
       ruleName: String
   ): Rule1[Seq[T]] = rule {
-    (NewLine.+ ~ Indent ~ r().named(ruleName) ~> ((_, _))).+ ~> (
+    ((NewLine | Comment).+ ~ Indent ~ r().named(ruleName) ~> ((_, _))).+ ~> (
       (lines: Seq[(FIndent, T)]) => {
         val (indents, nodes) = lines.unzip
         validateIndents(indents) ~ push(nodes) | failX(
