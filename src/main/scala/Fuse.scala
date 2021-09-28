@@ -1,15 +1,16 @@
 package fuse
 
-import Compiler._
+import cats.effect._
 import cats.effect._
 import cats.implicits._
-import cats.effect._
 import com.monovore.decline._
 import com.monovore.decline.effect._
 import core.Context.Error
 
 import java.io.File
 import java.io._
+
+import sys.process._
 
 case class CompileFile(fuseFile: String)
 
@@ -21,7 +22,10 @@ object Fuse
     ) {
 
   val FuseFileExtension = "fuse"
+  val FuseGrinExtension = "grin"
   val FuseOutputExtension = "out"
+  val GrinRuntimeFile = "runtime.c"
+  val GrinPrimOpsFile = "prim_ops.c"
 
   val fileOpts: Opts[String] = Opts.argument[String](metavar = "file")
 
@@ -32,16 +36,26 @@ object Fuse
 
   override def main: Opts[IO[ExitCode]] =
     compileOpts.map { case CompileFile(file) =>
-      val program = new File(file)
-      val output =
-        new File(file.stripSuffix(FuseFileExtension) + FuseOutputExtension)
+      val fileName = file.stripSuffix(FuseFileExtension)
+      val grinFileName = fileName + FuseGrinExtension
+      val outputFileName = fileName + FuseOutputExtension
       for {
-        result <- compileFile(program, output)
-        exit_code <- result match {
+        result <- compileFile(new File(file), new File(grinFileName))
+        fuseExitCode <- result match {
           case Some(error) => IO.println(error).map(_ => ExitCode.Error)
           case None        => IO.pure(ExitCode.Success)
         }
-      } yield exit_code
+        grinExitCode <- fuseExitCode match {
+          case ExitCode.Success =>
+            IO.blocking(
+              s"grin $grinFileName -o $outputFileName -q -C $GrinRuntimeFile -C $GrinPrimOpsFile" !
+            ).map(_ match {
+              case 0 => ExitCode.Success
+              case _ => ExitCode.Error
+            })
+          case c => IO.pure(c)
+        }
+      } yield grinExitCode
     }
 
   def compileFile(origin: File, destination: File): IO[Option[Error]] = {
@@ -49,7 +63,7 @@ object Fuse
     val outIO: IO[OutputStream] = IO(new FileOutputStream(destination))
 
     (inIO, outIO).tupled
-      .bracket { case (in, out) => compile(origin.getName(), in, out) } {
+      .bracket { case (in, out) => Compiler.run(origin.getName(), in, out) } {
         case (in, out) =>
           (IO(in.close()), IO(out.close())).tupled
             .handleErrorWith(_ => IO.unit)

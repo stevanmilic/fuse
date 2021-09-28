@@ -25,20 +25,20 @@ object Types {
   case class TypeInt(info: Info) extends Type
 
   implicit val showTypeInfo: ShowInfo[Type] = ShowInfo.info(_ match {
-    case TypeVar(info, _, _) => info
-    case TypeId(info, _) => info
-    case TypeArrow(info, _, _) => info
-    case TypeUnit(info) => info
-    case TypeRecord(info, _) => info
-    case TypeVariant(info, _) => info
+    case TypeVar(info, _, _)    => info
+    case TypeId(info, _)        => info
+    case TypeArrow(info, _, _)  => info
+    case TypeUnit(info)         => info
+    case TypeRecord(info, _)    => info
+    case TypeVariant(info, _)   => info
     case TypeRec(info, _, _, _) => info
     case TypeAll(info, _, _, _) => info
-    case TypeAbs(info, _, _) => info
-    case TypeApp(info, _, _) => info
-    case TypeBool(info) => info
-    case TypeString(info) => info
-    case TypeFloat(info) => info
-    case TypeInt(info) => info
+    case TypeAbs(info, _, _)    => info
+    case TypeApp(info, _, _)    => info
+    case TypeBool(info)         => info
+    case TypeString(info)       => info
+    case TypeFloat(info)        => info
+    case TypeInt(info)          => info
   })
 }
 
@@ -92,39 +92,39 @@ object Terms {
   case class PatternDefault(info: Info) extends Pattern
 
   implicit val showTermInfo: ShowInfo[Term] = ShowInfo.info(_ match {
-    case TermFloat(info, _) => info
-    case TermInt(info, _) => info
-    case TermString(info, _) => info
-    case TermTrue(info) => info
-    case TermFalse(info) => info
-    case TermUnit(info) => info
-    case TermBuiltin(_) => UnknownInfo
-    case TermFold(info, _) => info
-    case TermTApp(info, _, _) => info
-    case TermTAbs(info, _, _) => info
-    case TermAscribe(info, _, _) => info
-    case TermTag(info, _, _, _) => info
-    case TermRecord(info, _) => info
+    case TermFloat(info, _)         => info
+    case TermInt(info, _)           => info
+    case TermString(info, _)        => info
+    case TermTrue(info)             => info
+    case TermFalse(info)            => info
+    case TermUnit(info)             => info
+    case TermBuiltin(_)             => UnknownInfo
+    case TermFold(info, _)          => info
+    case TermTApp(info, _, _)       => info
+    case TermTAbs(info, _, _)       => info
+    case TermAscribe(info, _, _)    => info
+    case TermTag(info, _, _, _)     => info
+    case TermRecord(info, _)        => info
     case TermMethodProj(info, _, _) => info
-    case TermFix(info, _) => info
-    case TermAbs(info, _, _, _, _) => info
+    case TermFix(info, _)           => info
+    case TermAbs(info, _, _, _, _)  => info
     case TermClosure(info, _, _, _) => info
-    case TermVar(info, _, _) => info
-    case TermApp(info, _, _) => info
-    case TermMatch(info, _, _) => info
-    case TermLet(info, _, _, _) => info
-    case TermProj(info, _, _) => info
+    case TermVar(info, _, _)        => info
+    case TermApp(info, _, _)        => info
+    case TermMatch(info, _, _)      => info
+    case TermLet(info, _, _, _)     => info
+    case TermProj(info, _, _)       => info
   })
 
   implicit val showPatternInfo: ShowInfo[Pattern] = ShowInfo.info(_ match {
-    case TermFloat(info, _) => info
-    case TermInt(info, _) => info
-    case TermString(info, _) => info
-    case TermTrue(info) => info
-    case TermFalse(info) => info
-    case TermUnit(info) => info
+    case TermFloat(info, _)      => info
+    case TermInt(info, _)        => info
+    case TermString(info, _)     => info
+    case TermTrue(info)          => info
+    case TermFalse(info)         => info
+    case TermUnit(info)          => info
     case PatternNode(info, _, _) => info
-    case PatternDefault(info) => info
+    case PatternDefault(info)    => info
   })
 }
 

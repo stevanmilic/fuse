@@ -15,7 +15,14 @@ import parser.Info.ShowInfo._
 import parser.Info._
 import parser.Types._
 
+// TODO: Add constants for prefixes for specific names in the context.
+
 object Desugar {
+  def run(
+      decls: List[FDecl],
+      initContext: Context
+  ): Either[Error, List[Bind]] =
+    process(decls).value.runA(initContext).value
 
   def process(decls: List[FDecl]): StateEither[List[Bind]] =
     decls.traverse(bind(_)).map(_.flatten)
@@ -571,7 +578,7 @@ object Desugar {
   // Prepends the identifier with "#" if it's an integer – depicting it's used
   // for the tuple records. If not, the identifier is returned unchanged.
   def withTupleParamId(i: String) = i.toIntOption match {
-    case Some(v) => s"#$i"
+    case Some(v) => s"t$i"
     case None    => i
   }
 
@@ -589,6 +596,7 @@ object Desugar {
 
   def toType(t: FType): StateEither[Type] =
     t match {
+      case FUnitType(info) => EitherT.rightT(TypeUnit(info))
       case FSimpleType(info, FIdentifier("i32"), None) =>
         EitherT.rightT(TypeInt(info))
       case FSimpleType(info, FIdentifier("f32"), None) =>

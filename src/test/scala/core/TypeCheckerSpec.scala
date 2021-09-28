@@ -3,6 +3,9 @@ package core
 import utest._
 import cats.data.State
 import core.Context._
+import core.Types._
+import core.Terms._
+import core.Bindings._
 
 object TypeCheckerSpec extends TestSuite {
   val tests = Tests {

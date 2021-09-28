@@ -18,6 +18,7 @@ abstract class Keywords extends Parser {
   def `false` = Key("false")
   def `for` = Key("for")
   def `if` = Key("false")
+  def `Unit` = Key("Unit")
 
   def `:` = symbol(':')
   def `=` = symbol('=')
@@ -58,6 +59,7 @@ abstract class Keywords extends Parser {
         case 'm' => str("match")
         case 'l' => str("let")
         case 't' => "true" | "type" | "trait"
+        case 'U' => str("Unit")
         case '_' => ANY
         case _   => MISMATCH
       }

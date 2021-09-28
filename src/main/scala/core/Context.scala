@@ -31,14 +31,14 @@ object Context {
   def addBinding(n: String, b: Binding): ContextState[String] =
     State { ctx => ((n, b) :: ctx, n) }
 
-  def isNameBound(c: Context, x: String): Boolean =
-    c.exists { case (i, _) => i == x }
+  def isNameBound(x: String): ContextState[Boolean] =
+    State.inspect(c => c.exists { case (i, _) => i == x })
 
-  def pickFreshName(c: Context, x: String): ContextState[String] =
-    isNameBound(c, x) match {
-      case true  => pickFreshName(c, s"$x'")
+  def pickFreshName(x: String): ContextState[String] =
+    isNameBound(x).flatMap(_ match {
+      case true  => pickFreshName(s"$x'")
       case false => addName(x)
-    }
+    })
 
   def indexToName(c: Context, x: Int): Option[String] =
     c.lift(x).map { case ((i, _)) => i }

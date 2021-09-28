@@ -4,10 +4,33 @@ import cats.data.EitherT
 import cats.data.State
 import cats.implicits._
 import core.Types._
-
+import core.Bindings._
 import Context._
 
 object Representation {
+  def typeRepresentation(
+      types: List[Bind]
+  ): Either[String, List[String]] =
+    types
+      .traverse(bind => {
+        val repr = bind.b match {
+          case TypeVarBind(k) =>
+            Representation.kindToString(k).pure[StateEither]
+          case VarBind(ty) =>
+            Context.runE(Representation.typeToString(ty, buildContext = true))
+          case TypeAbbBind(_, Some(k)) =>
+            Representation.kindToString(k).pure[StateEither]
+          case TermAbbBind(_, Some(ty)) =>
+            Context.runE(Representation.typeToString(ty, buildContext = true))
+        }
+        repr.map2(EitherT.liftF(addName(bind.i))) { case (repr, id) =>
+          s"$id: $repr"
+        }
+      })
+      .value
+      .runA(emptyContext)
+      .value
+
   def typeToString(
       t: Type,
       buildContext: Boolean = false

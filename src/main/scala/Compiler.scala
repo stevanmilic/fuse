@@ -4,6 +4,7 @@ import cats.data.EitherT
 import cats.data.State
 import cats.effect.IO
 import cats.implicits._
+import code.Grin
 import core.Bindings._
 import core.Context._
 import core._
@@ -18,14 +19,14 @@ import scala.util.Failure
 import scala.util.Success
 
 object Compiler {
-  def compile(
+  def run(
       fileName: String,
       origin: InputStream,
       destination: OutputStream
   ): IO[Option[String]] =
     for {
       code <- IO.blocking(origin.readAllBytes.map(_.toChar).mkString)
-      result = process(code, fileName)
+      result = compile(code, fileName)
       value <- result match {
         case Right(compiledCode) =>
           IO.blocking(destination.write(compiledCode.getBytes)).map(_ => None)
@@ -33,14 +34,16 @@ object Compiler {
       }
     } yield value
 
-  def process(code: String, fileName: String): Either[Error, String] = for {
+  def compile(code: String, fileName: String): Either[Error, String] = for {
     v <- parse(code, fileName)
     c1 = BuiltIn.Functions.map(b => (b.i, NameBind))
-    d <- desugar(v.toList, c1)
+    // NOTE: The built-in functions are reversed in order to initialize the
+    // context in the correct order.
+    d <- Desugar.run(v.toList, c1.reverse)
     b2 = BuiltIn.Functions ++ d
-    types <- typeCheck(b2)
-    repr <- typeRepresentation(types)
-  } yield repr.mkString("\n")
+    bindings <- TypeChecker.run(b2)
+    grinCode <- Right(Grin.generate(bindings))
+  } yield grinCode
 
   def parse(code: String, fileName: String): Either[Error, Seq[FDecl]] = {
     val parser = new FuseParser(code, fileName)
@@ -51,42 +54,4 @@ object Compiler {
       case Failure(e) => Left(e.toString)
     }
   }
-
-  def desugar(
-      decls: List[FDecl],
-      initContext: Context
-  ): Either[Error, List[Bind]] =
-    Desugar.process(decls).value.runA(initContext).value
-
-  def typeCheck(
-      binds: List[Bind]
-  ): Either[Error, List[Bind]] =
-    TypeChecker
-      .check(binds)
-      .value
-      .runA(emptyContext)
-      .value
-
-  def typeRepresentation(
-      types: List[Bind]
-  ): Either[String, List[String]] =
-    types
-      .traverse(bind => {
-        val repr = bind.b match {
-          case TypeVarBind(k) =>
-            Representation.kindToString(k).pure[StateEither]
-          case VarBind(ty) =>
-            Context.runE(Representation.typeToString(ty, buildContext = true))
-          case TypeAbbBind(_, Some(k)) =>
-            Representation.kindToString(k).pure[StateEither]
-          case TermAbbBind(_, Some(ty)) =>
-            Context.runE(Representation.typeToString(ty, buildContext = true))
-        }
-        repr.map2(EitherT.liftF(addName(bind.i))) { case (repr, id) =>
-          s"$id: $repr"
-        }
-      })
-      .value
-      .runA(emptyContext)
-      .value
 }

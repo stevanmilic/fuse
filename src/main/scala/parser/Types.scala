@@ -20,6 +20,7 @@ object Types {
     case FSimpleType(info, _, _) => info
     case FTupleType(info, _)     => info
     case FFuncType(info, _, _)   => info
+    case FUnitType(info)         => info
   })
 
   // Type Definitions
@@ -30,6 +31,7 @@ object Types {
   ) extends FType
   case class FTupleType(info: Info, t1: Seq[FType]) extends FType
   case class FFuncType(info: Info, i: Seq[FType], o: FType) extends FType
+  case class FUnitType(info: Info) extends FType
   type FTypes = Seq[FType]
 
   case class FParam(info: Info, i: FIdentifier, t: FType)
@@ -46,7 +48,9 @@ abstract class Types(fileName: String) extends Identifiers(fileName) {
   def TypeParamClause = rule { '[' ~ TypeParam.+(',') ~ ']' }
 
   def Type: Rule1[FType] = rule {
-    FuncType.named("function type") | TupleType.named("tuple type") | SimpleType
+    FuncType.named("function type") | TupleType.named(
+      "tuple type"
+    ) | UnitType | SimpleType
       .named("type")
   }
 
@@ -65,6 +69,7 @@ abstract class Types(fileName: String) extends Identifiers(fileName) {
   def SimpleType = rule {
     info ~ identifier ~ TypeArgs.? ~> FSimpleType
   }
+  def UnitType = rule { info ~ `Unit` ~> FUnitType }
   def TypeList = rule { Type.+(',') }
   def TypeArgs = rule { '[' ~ TypeList.named("types") ~ ']' }
 

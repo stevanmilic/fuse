@@ -18,14 +18,27 @@ import scala.annotation.tailrec
 import scala.util._
 
 object TypeChecker {
+  val MainFunction = "main"
+
+  def run(binds: List[Bind]): Either[Error, List[Bind]] =
+    check(binds).value.runEmptyA.value
 
   def check(binds: List[Bind]): StateEither[List[Bind]] =
-    binds.traverse(bind =>
-      for {
-        binding <- checkBinding(bind.b)
-        id <- EitherT.liftF(addBinding(bind.i, binding))
-      } yield Bind(id, binding)
-    )
+    binds
+      .traverse(bind =>
+        for {
+          binding <- checkBinding(bind.b)
+          id <- EitherT.liftF[ContextState, Error, String](
+            addBinding(bind.i, binding)
+          )
+        } yield Bind(id, binding)
+      )
+      .flatMap(binds =>
+        binds.exists { bind => bind.i == MainFunction } match {
+          case true  => binds.pure[StateEither]
+          case false => TypeError.format(MainFunctionNotFoundTypeError())
+        }
+      )
 
   def checkBinding(b: Binding): StateEither[Binding] = b match {
     case NameBind           => EitherT.rightT(NameBind)

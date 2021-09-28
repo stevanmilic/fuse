@@ -11,6 +11,8 @@ libraryDependencies += "com.monovore" %% "decline-effect" % "2.0.0"
 libraryDependencies += "com.lihaoyi" %% "fansi" % "0.2.14"
 libraryDependencies += "com.lihaoyi" %% "utest" % "0.7.2" % "test"
 
+addCompilerPlugin("com.olegpy" %% "better-monadic-for" % "0.3.1")
+
 scalacOptions ++= Seq(
   "-feature",
   "-deprecation",

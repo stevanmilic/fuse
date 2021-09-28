@@ -194,6 +194,9 @@ case class WrongBindingForVariableTypeError(
     code: String = "E0028"
 ) extends TypeError
 
+case class MainFunctionNotFoundTypeError(code: String = "E0029")
+    extends TypeError
+
 object TypeError {
   def format[T](error: TypeError): StateEither[T] = {
     val errorMessage = error match {
@@ -497,6 +500,9 @@ object TypeError {
             )
           )
         )
+      case MainFunctionNotFoundTypeError(code) =>
+        consoleError("`main` function not defined", UnknownInfo, Some(code))
+          .pure[StateEither]
     }
     errorMessage.flatMap(e => EitherT.leftT[ContextState, T](e))
   }
