@@ -338,14 +338,14 @@ object TypeChecker {
 
   def typeOfPattern(
       p: Pattern,
-      simpleExprType: Type,
-      exprType: Type
+      unfoldedMatchExprType: Type,
+      matchExprType: Type
   ): StateEither[(Option[Type], Int)] =
     p match {
       case t: Term           => typeOf(t).map(v => (Some(v), 0))
       case PatternDefault(_) => EitherT.pure((None, 0))
       case PatternNode(info, node, vars) =>
-        simpleExprType match {
+        unfoldedMatchExprType match {
           case TypeVariant(_, fields) =>
             for {
               ty <- fields
@@ -355,17 +355,17 @@ object TypeChecker {
                   TypeError.format(
                     MatchVariantPatternMismatchTypeError(
                       info,
-                      exprType,
+                      matchExprType,
                       node
                     )
                   )
                 )
               numOfBindVars <- ty match {
                 case tyR @ TypeRecord(_, _) =>
-                  typeOfPattern(p, tyR, exprType).map(_._2)
+                  typeOfPattern(p, tyR, matchExprType).map(_._2)
                 case _ => 0.pure[StateEither]
               }
-            } yield (Some(simpleExprType), numOfBindVars)
+            } yield (Some(unfoldedMatchExprType), numOfBindVars)
           case TypeRecord(_, fields) =>
             for {
               optionIdx <- EitherT.liftF(
@@ -380,17 +380,17 @@ object TypeChecker {
                   TypeError.format(
                     MatchRecordPatternMismatchTypeError(
                       info,
-                      exprType,
+                      matchExprType,
                       node
                     )
                   )
                 )
               _ <- Context.getType(info, idx)
-              _ <- bindFieldsToVars(info, fields, vars, simpleExprType)
-            } yield (Some(simpleExprType), fields.length)
+              _ <- bindFieldsToVars(info, fields, vars, unfoldedMatchExprType)
+            } yield (Some(unfoldedMatchExprType), fields.length)
           case _ =>
             TypeError.format(
-              MatchExprNotDataTypeError(info, simpleExprType, node)
+              MatchExprNotDataTypeError(info, unfoldedMatchExprType, node)
             )
         }
     }
@@ -404,8 +404,8 @@ object TypeChecker {
     fields.length == vars.length match {
       case true =>
         EitherT.right(
-          fields.zipWithIndex.traverse { case ((f, i)) =>
-            Context.addBinding(f._1, VarBind(typeShift(i, f._2)))
+          fields.zipWithIndex.zip(vars).traverse { case ((f, i), v) =>
+            Context.addBinding(v, VarBind(typeShift(i, f._2)))
           }
         )
       case false =>

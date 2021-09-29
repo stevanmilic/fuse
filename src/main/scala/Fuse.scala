@@ -24,8 +24,8 @@ object Fuse
   val FuseFileExtension = "fuse"
   val FuseGrinExtension = "grin"
   val FuseOutputExtension = "out"
-  val GrinRuntimeFile = "runtime.c"
-  val GrinPrimOpsFile = "prim_ops.c"
+  val GrinRuntimeFile = "grin/runtime.c"
+  val GrinPrimOpsFile = "grin/prim_ops.c"
 
   val fileOpts: Opts[String] = Opts.argument[String](metavar = "file")
 
