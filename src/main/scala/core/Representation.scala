@@ -28,7 +28,7 @@ object Representation {
         }
       })
       .value
-      .runA(emptyContext)
+      .runEmptyA
       .value
 
   def typeToString(

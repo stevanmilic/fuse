@@ -154,7 +154,12 @@ object TypeChecker {
               }
               methodOptionIdx <- EitherT.liftF(
                 State.inspect { (ctx: Context) =>
-                  nameToIndex(ctx, Desugar.toMethodId(method, typeName))
+                  {
+                    val methodID = Desugar.toMethodId(method, typeName)
+                    nameToIndex(ctx, methodID).orElse(
+                      nameToIndex(ctx, Desugar.toRecAbsId(methodID))
+                    )
+                  }
                 }
               )
               methodIdx <- methodOptionIdx match {
@@ -243,25 +248,25 @@ object TypeChecker {
         exprType <- EitherT.liftF(unfoldType(ty1))
         // Get the types of expression for each case, with a check for pattern
         // type equivalence to the expression type.
-        caseExprTypes <- cases.traverse { (v) =>
+        caseExprTypes <- cases.traverse { case (pattern, term) =>
           Context.runE(
             for {
-              patternTypeInfo <- typeOfPattern(v._1, exprType, ty1)
-              _ <- patternTypeInfo._1
+              (patternType, variables) <- typeOfPattern(pattern, exprType, ty1)
+              _ <- patternType
                 .map(ty =>
                   isTypeEqualWithTypeError(
                     exprType,
                     ty,
                     MatchTypeMismatchPatternTypeError(
-                      v._1.info,
+                      term.info,
                       ty1,
                       ty
                     )
                   )
                 )
                 .getOrElse(EitherT.pure[ContextState, Error](()))
-              caseExprType <- pureTypeOf(v._2)
-            } yield (typeShift(-patternTypeInfo._2, caseExprType), v._2.info)
+              caseExprType <- pureTypeOf(term)
+            } yield (typeShift(-variables.length, caseExprType), term.info)
           )
         }
         // Finally, check if all the case expressions have the same type.
@@ -340,10 +345,10 @@ object TypeChecker {
       p: Pattern,
       unfoldedMatchExprType: Type,
       matchExprType: Type
-  ): StateEither[(Option[Type], Int)] =
+  ): StateEither[(Option[Type], List[String])] =
     p match {
-      case t: Term           => typeOf(t).map(v => (Some(v), 0))
-      case PatternDefault(_) => EitherT.pure((None, 0))
+      case t: Term           => typeOf(t).map(v => (Some(v), List()))
+      case PatternDefault(_) => EitherT.pure((None, List()))
       case PatternNode(info, node, vars) =>
         unfoldedMatchExprType match {
           case TypeVariant(_, fields) =>
@@ -360,12 +365,12 @@ object TypeChecker {
                     )
                   )
                 )
-              numOfBindVars <- ty match {
+              variables <- ty match {
                 case tyR @ TypeRecord(_, _) =>
                   typeOfPattern(p, tyR, matchExprType).map(_._2)
-                case _ => 0.pure[StateEither]
+                case _ => List().pure[StateEither]
               }
-            } yield (Some(unfoldedMatchExprType), numOfBindVars)
+            } yield (Some(unfoldedMatchExprType), variables)
           case TypeRecord(_, fields) =>
             for {
               optionIdx <- EitherT.liftF(
@@ -386,8 +391,13 @@ object TypeChecker {
                   )
                 )
               _ <- Context.getType(info, idx)
-              _ <- bindFieldsToVars(info, fields, vars, unfoldedMatchExprType)
-            } yield (Some(unfoldedMatchExprType), fields.length)
+              variables <- bindFieldsToVars(
+                info,
+                fields,
+                vars,
+                unfoldedMatchExprType
+              )
+            } yield (Some(unfoldedMatchExprType), variables)
           case _ =>
             TypeError.format(
               MatchExprNotDataTypeError(info, unfoldedMatchExprType, node)
@@ -403,10 +413,21 @@ object TypeChecker {
   ): StateEither[List[String]] =
     fields.length == vars.length match {
       case true =>
+        val t = fields.zipWithIndex.zip(vars).traverse { case ((f, i), v) =>
+          isRecursiveType(f._2).map(isRecType => {
+            val variableName = isRecType match {
+              case true  => s"$v'"
+              case false => v
+            }
+            (variableName, f._2, i)
+          })
+        }
         EitherT.right(
-          fields.zipWithIndex.zip(vars).traverse { case ((f, i), v) =>
-            Context.addBinding(v, VarBind(typeShift(i, f._2)))
-          }
+          t.flatMap(v =>
+            v.traverse { case (v, ty, idx) =>
+              Context.addBinding(v, VarBind(typeShift(idx, ty)))
+            }
+          )
         )
       case false =>
         TypeError.format(
@@ -521,14 +542,12 @@ object TypeChecker {
         case _                  => OptionT.none
       })
 
-  def isTypeAbb(index: Int): ContextState[Boolean] = Context
-    .getBinding(UnknownInfo, index)
-    .toOption
-    .map(_ match {
-      case TypeAbbBind(_, _) => true
-      case _                 => false
-    })
-    .getOrElse(false)
+  def isRecursiveType(ty: Type): ContextState[Boolean] =
+    simplifyType(ty)
+      .map(_ match {
+        case _: TypeRec => true
+        case v          => false
+      })
 
   def pureKindOf(t: Type): StateEither[Kind] = Context.runE(kindOf(t))
 

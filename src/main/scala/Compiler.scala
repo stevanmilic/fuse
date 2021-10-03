@@ -39,7 +39,7 @@ object Compiler {
     c1 = BuiltIn.Functions.map(b => (b.i, NameBind))
     // NOTE: The built-in functions are reversed in order to initialize the
     // context in the correct order.
-    d <- Desugar.run(v.toList, c1.reverse)
+    d <- Desugar.run(v.toList, (c1.reverse, 0))
     b2 = BuiltIn.Functions ++ d
     bindings <- TypeChecker.run(b2)
     grinCode <- Right(Grin.generate(bindings))

@@ -18,6 +18,10 @@ import parser.Types._
 // TODO: Add constants for prefixes for specific names in the context.
 
 object Desugar {
+  val RecursiveFunctionParamPrefix = "^"
+  val MethodNamePrefix = "!"
+  val RecordConstrPrefix = "%"
+
   def run(
       decls: List[FDecl],
       initContext: Context
@@ -362,8 +366,11 @@ object Desugar {
         vars <- np.traverse(_ match {
           case PatternNode(info, v, List()) =>
             EitherT.liftF[ContextState, Error, String](Context.addName(v))
-          case PatternDefault(_) => WildcardName.pure[StateEither]
-          case _                 =>
+          case PatternDefault(_) =>
+            EitherT.liftF[ContextState, Error, String](
+              Context.addName(WildcardName)
+            )
+          case _ =>
             // TODO: Use the info from the pattern core class, instead of root pattern.
             DesugarError.format[String](
               NestedPatternNotSupportedDesugarError(p.info)
@@ -385,12 +392,12 @@ object Desugar {
         .nameToIndex(ctx, toRecordConstructorId(i))
         .orElse(Context.nameToIndex(ctx, i))
         .orElse(Context.nameToIndex(ctx, toRecAbsId(i))) match {
-        case Some(index) => (ctx, Some(TermVar(info, index, ctx.length)))
+        case Some(index) => (ctx, Some(TermVar(info, index, ctx._1.length)))
         case None        => (ctx, None)
       }
     }
 
-  def toRecAbsId(i: String): String = s"^$i"
+  def toRecAbsId(i: String): String = s"$RecursiveFunctionParamPrefix$i"
 
   // # Term # region_end
 
@@ -584,13 +591,13 @@ object Desugar {
 
   // The record constructor has a prefix "%" that should be searched during
   // type checking when the record type is found in the application.
-  def toRecordConstructorId(i: String) = s"%$i"
+  def toRecordConstructorId(i: String) = s"$RecordConstrPrefix$i"
 
   // The method type has a prefix "!" that should be searched during type
   // checking when the projection is found for a variable. There's also a "#"
   // separator that depicts the type name for the method.
   def toMethodId(methodName: String, typeName: String) =
-    s"!${methodName}#${typeName}"
+    s"$MethodNamePrefix${methodName}#${typeName}"
 
   // # Constructors # region_end
 
@@ -633,7 +640,7 @@ object Desugar {
     })
     typeVar <- value match {
       case (ctx, Some(index)) =>
-        TypeVar(info, index, ctx.length).pure[StateEither]
+        TypeVar(info, index, ctx._1.length).pure[StateEither]
       case _ => DesugarError.format(TypeVariableNotFoundDesugarError(info, i))
     }
   } yield typeVar

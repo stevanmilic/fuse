@@ -139,6 +139,8 @@ object Bindings {
   case class VarBind(t: Type) extends Binding
   case class TypeAbbBind(t: Type, k: Option[Kind] = None) extends Binding
   case class TermAbbBind(t: Term, ty: Option[Type] = None) extends Binding
+  // Used by code generation phase (grin).
+  case object TempVarBind extends Binding
 
 // Global bindings.
   case class Bind(i: String, b: Binding)

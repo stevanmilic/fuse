@@ -48,7 +48,7 @@ object Fuse
         grinExitCode <- fuseExitCode match {
           case ExitCode.Success =>
             IO.blocking(
-              s"grin $grinFileName -o $outputFileName -q -C $GrinRuntimeFile -C $GrinPrimOpsFile" !
+              s"grin $grinFileName --optimize -o $outputFileName -q -C $GrinRuntimeFile -C $GrinPrimOpsFile" !
             ).map(_ match {
               case 0 => ExitCode.Success
               case _ => ExitCode.Error

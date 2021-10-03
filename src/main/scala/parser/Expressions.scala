@@ -263,6 +263,7 @@ abstract class Expressions(fileName: String) extends Types(fileName) {
 
   // Literals
   def Literal: Rule1[FLiteral] = rule { Bool | Float | Int | String }
+  // TODO: Add Unit literal `()`
   def Bool = rule {
     info ~ capture(`true` | `false`) ~> ((i, s) => FBool(i, s.trim().toBoolean))
   }
