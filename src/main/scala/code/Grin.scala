@@ -120,9 +120,9 @@ object Grin {
 
   def toExpr(expr: Term): ContextState[Expr] =
     expr match {
-      case TermBuiltin(_)   => StateT.pure(Value(""))
+      case TermBuiltin(_)       => StateT.pure(Value(""))
       case TermAscribe(_, t, _) => toExpr(t)
-      case TermFix(_, body) => pureToExpr(body)
+      case TermFix(_, body)     => pureToExpr(body)
       case TermAbs(_, variable, variableType, abs: TermAbs, _) =>
         for {
           fVar <- Context.addBinding(variable, VarBind(variableType))
@@ -135,7 +135,7 @@ object Grin {
         } yield Value(show"${toParamVariable(fVar)} =\n$b".strip())
       case TermApp(_, TermFold(_, ty), r: TermRecord) =>
         for {
-          typeName <- getNameFromIndex(TypeChecker.findRootTypeIndex(ty).get)
+          typeName <- getNameFromType(ty)
           recordExpr <- toExpr(r)
           (prepExprs, parameters) <- prepParameters(recordExpr)
           constr = show"pure (${cTag(typeName)} $parameters)"
@@ -195,10 +195,40 @@ object Grin {
               Value(exprs.map { case (_, p) => p.show }.mkString(" "))
             )
           })
-      case TermProj(_, ty, label) => 
-        // TODO: Use the do expression combined with case expression to extract
-        // the specified field from the record.
-        ???
+      case TermProj(_, t, label) =>
+        for {
+          e <- toExpr(t)
+          ty <- typeCheck(t)
+          typeName <- getNameFromType(ty)
+          tyS <- TypeChecker.simplifyType(ty)
+          (variables, labelVariable) <- tyS match {
+            case TypeRec(_, _, _, TypeRecord(_, fields)) =>
+              fields
+                .traverse(_ => addTempVariable())
+                .map(v =>
+                  (
+                    v.mkString(" "),
+                    // TODO: We probably need to fetch a node value here.
+                    v.get(fields.indexWhere { case (f, _) => f == label }).get
+                  )
+                )
+          }
+          doExpr: Expr = DoExpr(
+            CaseExpr(
+              e,
+              List(
+                CaseClause(
+                  s"(${cTag(typeName)} $variables)",
+                  PureExpr(Value(labelVariable))
+                )
+              )
+            )
+          )
+          bindVar <- addTempVariable()
+        } yield MultiLineExpr(
+          List(BindExpr(show"$bindVar <- $doExpr", bindVar)),
+          Value(bindVar)
+        )
       case TermMatch(_, e, patterns) =>
         for {
           ty1 <- typeCheck(e)
@@ -210,8 +240,7 @@ object Grin {
         for {
           tyT1 <- typeCheck(t)
           tyT1S <- TypeChecker.simplifyType(tyT1)
-          rootTypeIndexOption = TypeChecker.findRootTypeIndex(tyT1)
-          typeName <- getNameFromIndex(rootTypeIndexOption.get)
+          typeName <- getNameFromType(tyT1)
           f = methodToName(Desugar.toMethodId(method, typeName))
         } yield Value(s"$f")
       case TermFold(_, _)   => StateT.pure(Value("pure "))
@@ -309,6 +338,9 @@ object Grin {
         recordConstrToName(v)
       case s => s
     })
+
+  def getNameFromType(ty: Type): ContextState[String] =
+    getNameFromIndex(TypeChecker.findRootTypeIndex(ty).get)
 
   def getNameFromIndex(idx: Int): ContextState[String] =
     State.inspect { ctx => Context.indexToName(ctx, idx).get }
