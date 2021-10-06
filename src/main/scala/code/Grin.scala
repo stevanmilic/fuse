@@ -1,27 +1,36 @@
 package code
 
+import cats.Show
+import cats.data.State
+import cats.data.StateT
 import cats.implicits._
-import cats.data.{StateT, State}
 import core.Bindings._
-import core.Terms._
-import core.Types._
 import core.Context
 import core.Context._
-import core.TypeChecker
-import cats.Show
 import core.Desugar
+import core.Terms._
+import core.TypeChecker
+import core.Types._
 import parser.Info.UnknownInfo
+
+import GrinUtils._
 
 object Grin {
   val MainFunction = "grinMain"
-
-  val dummyType = TypeUnit(UnknownInfo)
+  val PartialFunctionSuffix = "''"
 
   sealed trait Expr
 
   case class Value(e: String) extends Expr
-  case class ComplexExpr(e: String, indent: Int = 1) extends Expr
-  case class BindExpr(e: String, v: String, indent: Int = 1) extends Expr
+  case class FunctionValue(f: String, arity: Int) extends Expr
+  case class AppExpr(e: String, resultArity: Int = 0, indent: Int = 1)
+      extends Expr
+  case class BindExpr(
+      repr: String,
+      variable: String,
+      value: Expr,
+      indent: Int = 1
+  ) extends Expr
   case class MultiLineExpr(exprs: List[BindExpr], result: Expr) extends Expr
   case class CaseClause(pattern: String, expr: Expr, indent: Int = 2)
       extends Expr
@@ -29,13 +38,15 @@ object Grin {
       extends Expr
   case class PureExpr(expr: Expr, indent: Int = 1) extends Expr
   case class DoExpr(expr: Expr, indent: Int = 1) extends Expr
+  case class Abs(variable: String, expr: Expr) extends Expr
 
   def indent(indent: Int, instr: String) =
     List.fill(indent)(" ").mkString + instr
 
   def indentExpr(indent: Int, e: Expr): Expr = e match {
-    case BindExpr(expr, v, _) => BindExpr(expr, v, indent)
-    case ComplexExpr(expr, _) => ComplexExpr(expr, indent)
+    case BindExpr(expr, variable, value, _) =>
+      BindExpr(expr, variable, value, indent)
+    case AppExpr(expr, arity, _) => AppExpr(expr, arity, indent)
     case CaseExpr(expr, cases, _) =>
       val t = cases.map(c => indentExpr(indent + 1, c)).map {
         case c: CaseClause => c
@@ -44,7 +55,7 @@ object Grin {
     case CaseClause(pattern, expr, _) => CaseClause(pattern, expr, indent)
     case MultiLineExpr(exprs, expr) =>
       MultiLineExpr(
-        exprs.map(l => BindExpr(l.e, l.v, indent)),
+        exprs.map(l => BindExpr(l.repr, l.variable, l.value, indent)),
         indentExpr(indent, expr)
       )
     case PureExpr(expr, _) => PureExpr(indentExpr(indent, expr), indent)
@@ -53,9 +64,10 @@ object Grin {
 
   implicit val showExpr: Show[Expr] =
     Show.show(_ match {
-      case Value(e)          => e
-      case ComplexExpr(e, i) => indent(i, e)
-      case BindExpr(e, _, i) => indent(i, e)
+      case Value(e)             => e
+      case FunctionValue(f, _)  => f
+      case AppExpr(e, _, i)     => indent(i, e)
+      case BindExpr(e, _, _, i) => indent(i, e)
       case MultiLineExpr(exprs, result) =>
         (exprs :+ result).map((_: Expr).show).mkString("\n")
       case CaseClause(pattern, e, i) =>
@@ -78,33 +90,100 @@ object Grin {
         val doLine = "do\n"
         val iExpr = indentExpr(i + 1, expr)
         show"$doLine$iExpr"
-
+      case Abs(variable, e: Abs) => show"$variable $e".strip()
+      case Abs(variable, e)      => show"$variable =\n$e"
     })
 
-  def generate(bindings: List[Bind]): String =
-    bindings
-      .traverse(bind =>
-        for {
-          code <- toBinding(bind)
-          id <- Context.addBinding(bind.i, bind.b)
-        } yield code
-      )
-      .runEmptyA
-      .value
-      .filter(!_.isBlank)
-      .mkString("\n\n")
+  def generate(bindings: List[Bind]): String = {
+    val s = for {
+      values <- bindings
+        .traverse(bind =>
+          for {
+            code <- toBinding(bind)
+            id <- Context.addBinding(bind.i, bind.b)
+          } yield code
+        )
+      (code, partialFunctions) = values.filter(!_._1.isBlank).unzip
+      applyFunction <- buildApply(partialFunctions.flatten)
+    } yield (code :+ applyFunction).mkString("\n\n")
+    s.runEmptyA.value
+  }
 
-  def toBinding(binding: Bind): ContextState[String] = binding.b match {
-    case TermAbbBind(expr: TermBuiltin, _) => "".pure[ContextState]
-    case TermAbbBind(expr, _) =>
-      pureToExpr(expr).map { e =>
-        (binding.i, expr) match {
-          case ("main", _)     => show"$MainFunction $e"
-          case (b, t: TermApp) => show"$b = $e"
-          case (b, t)          => show"${nameBind(b)} $e"
+  def buildApply(partialFun: List[FunctionValue]): ContextState[String] =
+    partialFun.isEmpty match {
+      case false =>
+        for {
+          funVariable <- addTempVariable()
+          funParameter <- addTempVariable()
+          caseClauses <- partialFun.traverse(partialFunToCase(_, funParameter))
+          caseExpr = CaseExpr(Value(funVariable), caseClauses.flatten)
+          abs1 = Abs(funParameter, caseExpr)
+          abs2 = Abs(funVariable, abs1)
+        } yield show"apply $abs2"
+      case true => "".pure[ContextState]
+    }
+
+  def partialFunToCase(
+      partialFun: FunctionValue,
+      parameter: String
+  ): ContextState[List[CaseClause]] = {
+    def iter(arity: Int): ContextState[List[CaseClause]] = arity match {
+      case 0 => State.pure(Nil)
+      case _ =>
+        for {
+          acc <- iter(arity - 1)
+          variables <- List
+            .fill(partialFun.arity - arity)("")
+            .traverse(_ => addTempVariable())
+          tag = pTag(arity, partialFun.f)
+          vars = variables.mkString(" ").strip()
+          pattern = s"($tag $vars)"
+          expr = arity - 1 match {
+            case 0 => AppExpr(s"${partialFun.f} $vars $parameter")
+            case v =>
+              val lowerArityTag = pTag(v, partialFun.f)
+              AppExpr(s"pure ($lowerArityTag $vars $parameter)")
+          }
+        } yield CaseClause(pattern, expr) :: acc
+    }
+    iter(partialFun.arity)
+  }
+
+  def toBinding(binding: Bind): ContextState[(String, List[FunctionValue])] =
+    binding.b match {
+      case TermAbbBind(expr: TermBuiltin, _) => State.pure("", List())
+      case TermAbbBind(expr, _) =>
+        pureToExpr(expr).map { e =>
+          {
+            val bindExpr = (binding.i, expr) match {
+              case ("main", _)     => show"$MainFunction $e"
+              case (b, t: TermApp) => show"$b = $e"
+              case (b, t)          => show"${nameBind(b)} $e"
+            }
+            (bindExpr, extractPartialFunctions(e))
+          }
         }
-      }
-    case _ => "".pure[ContextState]
+      case _ => State.pure("", List())
+    }
+
+  def extractPartialFunctions(e: Expr): List[FunctionValue] = e match {
+    case _: Value                                 => Nil
+    case f @ FunctionValue(_, arity) if arity > 0 => List(f)
+    case _: FunctionValue                         => Nil
+    case _: AppExpr                               => Nil
+    case BindExpr(_, _, e, _)                     => extractPartialFunctions(e)
+    case DoExpr(e, _)                             => extractPartialFunctions(e)
+    case CaseClause(_, e, _)                      => extractPartialFunctions(e)
+    case PureExpr(e, _)                           => extractPartialFunctions(e)
+    case Abs(_, e)                                => extractPartialFunctions(e)
+    case CaseExpr(e, cases, _) =>
+      val casesPartialFunctions = cases.map(extractPartialFunctions(_)).flatten
+      extractPartialFunctions(e) :++ casesPartialFunctions
+    case MultiLineExpr(exprs, r) =>
+      exprs.map(extractPartialFunctions(_)).flatten :++ extractPartialFunctions(
+        r
+      )
+
   }
 
   def nameBind(binding: String): String = binding match {
@@ -125,40 +204,49 @@ object Grin {
       case TermFix(_, body)     => pureToExpr(body)
       case TermAbs(_, variable, variableType, abs: TermAbs, _) =>
         for {
-          fVar <- Context.addBinding(variable, VarBind(variableType))
+          variable1 <- includeFunctionSuffix(variable, variableType)
+          variable2 <- Context.addBinding(variable1, VarBind(variableType))
           a <- pureToExpr(abs: Term)
-        } yield Value(show"${toParamVariable(fVar)} $a".strip())
+        } yield Abs(toParamVariable(variable2), a)
       case TermAbs(_, variable, variableType, body, _) =>
         for {
-          fVar <- Context.addBinding(variable, VarBind(variableType))
+          variable1 <- includeFunctionSuffix(variable, variableType)
+          variable2 <- Context.addBinding(variable1, VarBind(variableType))
           b <- pureToExpr(body)
-        } yield Value(show"${toParamVariable(fVar)} =\n$b".strip())
+        } yield Abs(toParamVariable(variable2), b)
       case TermApp(_, TermFold(_, ty), r: TermRecord) =>
         for {
           typeName <- getNameFromType(ty)
-          recordExpr <- toExpr(r)
+          recordExpr <- pureToExpr(r)
           (prepExprs, parameters) <- prepParameters(recordExpr)
           constr = show"pure (${cTag(typeName)} $parameters)"
-        } yield MultiLineExpr(prepExprs, ComplexExpr(constr))
+        } yield MultiLineExpr(prepExprs, AppExpr(constr))
       case TermApp(_, value, svalue) =>
         for {
-          v <- toExpr(value)
-          sval <- toExpr(svalue)
-          (prepExprs1, result) = getResult(v)
+          v <- pureToExpr(value)
+          sval <- pureToExpr(svalue)
+          (prepExprs1, result) <- getResult(v)
           (prepExprs2, parameter) <- prepParameters(sval)
           prepExprs = prepExprs1 :++ prepExprs2
-          app = ComplexExpr(show"$result $parameter".strip())
+          app = result match {
+            case FunctionValue(f, arity) if f.contains(PartialFunctionSuffix) =>
+              AppExpr(show"apply $result $parameter".strip(), arity - 1)
+            case _ =>
+              AppExpr(show"$result $parameter".strip())
+          }
         } yield MultiLineExpr(prepExprs, app)
       case TermLet(_, variable, t1, t2) =>
         for {
           letValue <- pureToExpr(t1)
-          (prepExprs, letExpr) = getResult(letValue)
+          (prepExprs, letExpr) <- getResult(letValue)
           fVar <- typeCheck(t1).flatMap(ty =>
             Context.addBinding(variable, VarBind(ty))
           )
-          expr <- toExpr(t2)
+          expr <- pureToExpr(t2)
         } yield MultiLineExpr(
-          prepExprs :++ List(BindExpr(show"$fVar <- $letExpr".strip(), fVar)),
+          prepExprs :++ List(
+            BindExpr(show"$fVar <- $letExpr".strip(), fVar, letExpr)
+          ),
           expr
         )
       case TermTag(_, tag, TermUnit(_), _) =>
@@ -179,7 +267,7 @@ object Grin {
                 case true =>
                   addTempVariable().map(p =>
                     (
-                      Some(BindExpr(show"$p <- store $e", p)),
+                      Some(BindExpr(show"$p <- store $e", p, e)),
                       Value(p): Expr
                     )
                   )
@@ -197,7 +285,7 @@ object Grin {
           })
       case TermProj(_, t, label) =>
         for {
-          e <- toExpr(t)
+          e <- pureToExpr(t)
           ty <- typeCheck(t)
           typeName <- getNameFromType(ty)
           tyS <- TypeChecker.simplifyType(ty)
@@ -226,15 +314,17 @@ object Grin {
           )
           bindVar <- addTempVariable()
         } yield MultiLineExpr(
-          List(BindExpr(show"$bindVar <- $doExpr", bindVar)),
+          List(BindExpr(show"$bindVar <- $doExpr", bindVar, doExpr)),
           Value(bindVar)
         )
       case TermMatch(_, e, patterns) =>
         for {
           ty1 <- typeCheck(e)
           exprType <- TypeChecker.unfoldType(ty1)
-          t <- toExpr(e)
-          p <- patterns.traverse { case (p, e) => toCaseClause(p, e, exprType) }
+          t <- pureToExpr(e)
+          p <- patterns.traverse { case (p, e) =>
+            Context.run(toCaseClause(p, e, exprType))
+          }
         } yield CaseExpr(t, p)
       case TermMethodProj(_, t, method) =>
         for {
@@ -251,12 +341,20 @@ object Grin {
       case TermFalse(_)     => StateT.pure(Value("#False"))
       case TermUnit(_)      => State.pure(Value("()"))
       case TermVar(_, idx, _) =>
-        toVariable(idx).map2(
-          toContextState(Context.getBinding(UnknownInfo, idx))
-        ) {
-          case (v, VarBind(b)) => Value(v)
-          case (v, _)          => ComplexExpr(v)
-        }
+        for {
+          variable <- toVariable(idx)
+          binding <- toContextState(Context.getBinding(UnknownInfo, idx))
+          expr <- (variable, binding) match {
+            case (v, VarBind(ty)) =>
+              isFunctionType(ty).map(_ match {
+                case false => Value(v)
+                case true  => FunctionValue(v, getFunctionArity(ty))
+              })
+            case (v, TermAbbBind(t, Some(ty))) =>
+              FunctionValue(v, getFunctionArity(ty)).pure[ContextState]
+            case (v, _) => Value(v).pure[ContextState]
+          }
+        } yield expr
     }
 
   def toCaseClause(
@@ -270,14 +368,14 @@ object Grin {
           TypeChecker.typeOfPattern(p, matchExprType, dummyType)
         )
         cpat = s"(${cTag(node)} ${bindVariables.mkString(" ")})"
-        caseClause <- toCaseClause(cpat, e)
+        caseClause <- buildCaseClause(cpat, e)
       } yield caseClause
-    case PatternDefault(_) => toCaseClause("#default", e)
-    case t: Term           => toExpr(t).flatMap(cpat => toCaseClause(cpat.show, e))
+    case PatternDefault(_) => buildCaseClause("#default", e)
+    case t: Term           => pureToExpr(t).flatMap(cpat => buildCaseClause(cpat.show, e))
   }
 
-  def toCaseClause(cpat: String, t: Term): ContextState[CaseClause] = for {
-    caseExpr <- toExpr(t)
+  def buildCaseClause(cpat: String, t: Term): ContextState[CaseClause] = for {
+    caseExpr <- pureToExpr(t)
     (prepExprs, parameter) <- prepParameters(caseExpr)
   } yield CaseClause(
     cpat,
@@ -288,31 +386,52 @@ object Grin {
       expr: Expr
   ): ContextState[Tuple2[List[BindExpr], String]] =
     expr match {
-      case b @ BindExpr(e, v, n) =>
+      case b @ BindExpr(e, v, _, _) =>
         ((List(b), v)).pure[ContextState]
       case MultiLineExpr(exprs, r) =>
         prepParameters(r).map { case (prepExprs, result) =>
           (exprs :++ prepExprs, result)
         }
-      case ComplexExpr(e, i) =>
+      case c @ AppExpr(e, _, i) =>
         addTempVariable().flatMap(p =>
-          prepParameters(BindExpr(s"$p <- $e", p, i))
+          prepParameters(BindExpr(s"$p <- $e", p, c, i))
         )
-      case Value(v) if v.contains("'") =>
+      case v @ FunctionValue(f, 0) =>
         addTempVariable().flatMap(p =>
-          prepParameters(BindExpr(s"$p <- fetch $v", p))
+          prepParameters(BindExpr(s"$p <- $f", p, v))
         )
-      case Value(v) => StateT.pure((List(), v))
+      case v @ FunctionValue(f, arity) if !f.contains(PartialFunctionSuffix) =>
+        addTempVariable().flatMap(p =>
+          prepParameters(BindExpr(s"$p <- pure (${pTag(arity, f)})", p, v))
+        )
+      case FunctionValue(f, _) => State.pure(List(), f)
+      case v @ Value(s) if s.contains("'") =>
+        addTempVariable().flatMap(p =>
+          prepParameters(BindExpr(s"$p <- fetch $s", p, v))
+        )
+      case Value(v) => State.pure(List(), v)
     }
 
   def getResult(
       expr: Expr
-  ): Tuple2[List[BindExpr], Expr] = expr match {
-    case l: BindExpr             => (List(l), Value(l.v))
-    case MultiLineExpr(exprs, r) => (exprs, r)
-    case i: Value                => (List(), i)
-    case e: ComplexExpr          => (List(), e)
-    case c: CaseExpr             => (List(), DoExpr(c, c.indent))
+  ): ContextState[Tuple2[List[BindExpr], Expr]] = expr match {
+    case l: BindExpr => State.pure(List(l), Value(l.variable))
+    case MultiLineExpr(exprs, r) =>
+      getResult(r).map { case (prepExprs, v) =>
+        (exprs :++ prepExprs, v)
+      }
+    case i: Value         => State.pure(List(), i)
+    case f: FunctionValue => State.pure(List(), f)
+    case a @ AppExpr(e, arity, _) if arity >= 1 =>
+      addTempVariable().map(p => {
+        val f = toPartialFunVariable(p)
+        (
+          List(BindExpr(show"$f <- $e", f, a)),
+          FunctionValue(s"$f", arity)
+        )
+      })
+    case e: AppExpr  => State.pure(List(), e)
+    case c: CaseExpr => State.pure(List(), DoExpr(c, c.indent))
   }
 
   def toParamVariable(v: String): String = v match {
@@ -321,10 +440,16 @@ object Grin {
     case _                                                       => v
   }
 
-  def cTag(tag: String) = s"C$tag"
+  def includeFunctionSuffix(v: String, ty: Type): ContextState[String] =
+    isFunctionType(ty).map(_ match {
+      case true
+          if !v.isBlank && !v
+            .startsWith(Desugar.RecursiveFunctionParamPrefix) =>
+        toPartialFunVariable(v)
+      case _ => v
+    })
 
-  def isNodeValue(t: Term): ContextState[Boolean] = typeCheck(t)
-    .flatMap(TypeChecker.isRecursiveType(_))
+  def toPartialFunVariable(p: String): String = s"$p$PartialFunctionSuffix"
 
   def toVariable(idx: Integer): ContextState[String] =
     getNameFromIndex(idx).map(_ match {
@@ -339,30 +464,12 @@ object Grin {
       case s => s
     })
 
-  def getNameFromType(ty: Type): ContextState[String] =
-    getNameFromIndex(TypeChecker.findRootTypeIndex(ty).get)
-
-  def getNameFromIndex(idx: Int): ContextState[String] =
-    State.inspect { ctx => Context.indexToName(ctx, idx).get }
-
   def methodToName(n: String): String =
     s"${n.filter(_.isLetterOrDigit)}'"
 
   def recordConstrToName(n: String): String =
     n.stripPrefix(Desugar.RecordConstrPrefix)
 
-  def addTempVariable(): ContextState[String] =
-    Context.addBinding("p", TempVarBind)
-
-  def typeCheck(term: Term): ContextState[Type] =
-    toContextState(TypeChecker.pureTypeOf(term))
-
-  def toContextState[T](stateEither: StateEither[T]): ContextState[T] =
-    stateEither.value.map(v =>
-      v match {
-        case Right(v) => v
-        case Left(e) =>
-          throw new RuntimeException(e)
-      }
-    )
+  def addTempVariable(name: String = "p"): ContextState[String] =
+    Context.addBinding(name, TempVarBind)
 }
