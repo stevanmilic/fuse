@@ -37,7 +37,7 @@ abstract class Identifiers(fileName: String) extends Keywords {
   import Info._
 
   implicit def any(s: String): Rule0 = rule {
-    str(s) ~ quiet(Spacing.*)
+    str(s) ~ WS
   }
 
   def loc: Location = {
@@ -53,9 +53,11 @@ abstract class Identifiers(fileName: String) extends Keywords {
   def IdentifierPart = rule { AlphaNum_.named("alphanumeric").+ }
   def NewLine = rule(quiet('\r'.? ~ '\n'))
   def Indent = rule { quiet(capture(Spacing.+)) ~> (s => FIndent(s.size)) }
+  def WS = rule(quiet((Spacing | Comment).*))
   def WL = rule(quiet((Spacing | NewLine).*))
 
   def Comment = rule { '#' ~ (!NewLine ~ ANY).* }
+  def CommentLine = rule(quiet(Spacing.* ~ Comment ~ Spacing.* ~ NewLine))
 
   // Meta rule that matches one or more indented lines with the specified
   // rule. Accepts a `Function0` argument to prevent expansion of the passed
@@ -66,14 +68,13 @@ abstract class Identifiers(fileName: String) extends Keywords {
       r: () => Rule1[T],
       ruleName: String
   ): Rule1[Seq[T]] = rule {
-    ((NewLine | Comment).+ ~ Indent ~ r().named(ruleName) ~> ((_, _))).+ ~> (
-      (lines: Seq[(FIndent, T)]) => {
-        val (indents, nodes) = lines.unzip
-        validateIndents(indents) ~ push(nodes) | failX(
-          "correctly indented block"
-        )
-      }
-    )
+    ((NewLine | CommentLine).+ ~ Indent ~ r()
+      .named(ruleName) ~> ((_, _))).+ ~> ((lines: Seq[(FIndent, T)]) => {
+      val (indents, nodes) = lines.unzip
+      validateIndents(indents) ~ push(nodes) | failX(
+        "correctly indented block"
+      )
+    })
   }
 
   // Checks if the indents are correctly aligned in respect to any indentation
