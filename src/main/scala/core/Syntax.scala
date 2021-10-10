@@ -47,7 +47,7 @@ object Terms {
 
   sealed trait Term
 
-// Abstraction
+  // Abstraction
   case class TermFix(info: Info, t: Term) extends Term
   case class TermAbs(
       info: Info,
@@ -58,7 +58,7 @@ object Terms {
   ) extends Term
   case class TermClosure(info: Info, i: String, t: Option[Type], e: Term)
       extends Term
-// Expressions
+  // Expressions
   case class TermVar(info: Info, i1: Integer, i2: Integer) extends Term
   case class TermApp(info: Info, f: Term, v: Term) extends Term
   case class TermMatch(info: Info, t: Term, c: List[(Pattern, Term)])
@@ -66,20 +66,20 @@ object Terms {
   case class TermLet(info: Info, i: String, t1: Term, t2: Term) extends Term
   case class TermProj(info: Info, t: Term, i: String) extends Term
   case class TermMethodProj(info: Info, t: Term, i: String) extends Term
-// ADT
+  // ADT
   case class TermRecord(info: Info, v: List[(String, Term)]) extends Term
   case class TermTag(info: Info, i: String, t: Term, typ: Type) extends Term
   case class TermAscribe(info: Info, t: Term, typ: Type) extends Term
   case class TermFold(info: Info, t: Type) extends Term
-// Higher Kind
+  // Higher Kind
   case class TermTAbs(info: Info, i: String, t: Term) extends Term
   case class TermTApp(info: Info, t: Term, typ: Type) extends Term
-// Built-in functions with pre-defined type
+  // Built-in functions with pre-defined type
   case class TermBuiltin(typ: Type) extends Term
 
   sealed trait Pattern
 
-// Literals + Patterns
+  // Literals + Patterns
   case class TermFloat(info: Info, f: Float) extends Term with Pattern
   case class TermInt(info: Info, i: Int) extends Term with Pattern
   case class TermString(info: Info, s: String) extends Term with Pattern

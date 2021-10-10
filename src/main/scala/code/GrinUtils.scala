@@ -37,6 +37,63 @@ object GrinUtils {
     case _                             => 0
   }
 
+  def freeVars(term: Term): ContextState[List[(String, String)]] =
+    Context.run(extractFreeVars(term))
+
+  def extractFreeVars(term: Term): ContextState[List[(String, String)]] =
+    term match {
+      case TermVar(info, idx, ctxLength) =>
+        toContextState(Context.getBinding(info, idx))
+          .flatMap(_ match {
+            case VarBind(_) =>
+              getNameFromIndex(idx).flatMap(v =>
+                addTempVariable(v).map { p => List((v, p)) }
+              )
+            case _ =>
+              State.pure(Nil)
+          })
+      case TermClosure(_, variable, _, e) =>
+        for {
+          _ <- Context.addName(variable)
+          v <- freeVars(e)
+        } yield v
+      case TermMatch(_, t, c) =>
+        for {
+          v1 <- freeVars(t)
+          v2 <- c.traverse { case (p, e) =>
+            p match {
+              case PatternNode(_, node, vars) =>
+                for {
+                  _ <- vars.traverse(Context.addName(_))
+                  v <- freeVars(e)
+                } yield v
+              case _ => freeVars(e)
+            }
+          }
+        } yield v1 :++ v2.flatten
+      case TermLet(_, variable, t1, t2) =>
+        for {
+          v1 <- freeVars(t1)
+          _ <- Context.addName(variable)
+          v2 <- freeVars(t2)
+        } yield v1 :++ v2
+      case TermApp(_, t1, t2) =>
+        for {
+          v1 <- freeVars(t1)
+          v2 <- freeVars(t2)
+        } yield v1 :++ v2
+      case TermProj(_, t, _)       => freeVars(t)
+      case TermMethodProj(_, t, _) => freeVars(t)
+      case TermAscribe(_, t, _)    => freeVars(t)
+      case TermTAbs(_, _, t)       => freeVars(t)
+      case TermTApp(_, t, _)       => freeVars(t)
+      case _                       => State.pure(Nil)
+
+    }
+
+  def addTempVariable(name: String = "p"): ContextState[String] =
+    Context.addBinding(name, TempVarBind)
+
   def getNameFromType(ty: Type): ContextState[String] =
     getNameFromIndex(TypeChecker.findRootTypeIndex(ty).get)
 

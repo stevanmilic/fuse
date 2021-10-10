@@ -89,6 +89,7 @@ object Expressions {
   case class FInt(info: Info, i: Integer) extends FLiteral
   case class FFloat(info: Info, f: Float) extends FLiteral
   case class FString(info: Info, s: String) extends FLiteral
+  case class FUnit(info: Info) extends FLiteral
 
   implicit val showExprInfo: ShowInfo[FExpr] = ShowInfo.info(_ match {
     case FLetExpr(info, _, _, _)   => info
@@ -102,6 +103,7 @@ object Expressions {
     case FInt(info, _)             => info
     case FFloat(info, _)           => info
     case FString(info, _)          => info
+    case FUnit(info)               => info
     case FAddition(lhs, _)         => (lhs: FExpr).info
     case FSubtraction(lhs, _)      => (lhs: FExpr).info
     case FMultiplication(lhs, _)   => (lhs: FExpr).info
@@ -122,6 +124,7 @@ object Expressions {
     case FInt(info, _)                       => info
     case FFloat(info, _)                     => info
     case FString(info, _)                    => info
+    case FUnit(info)                         => info
     case FIdentifierPattern(info, _, _)      => info
     case FWildCardPattern(info)              => info
     case FTuplePattern(info, _)              => info
@@ -262,8 +265,10 @@ abstract class Expressions(fileName: String) extends Types(fileName) {
   }
 
   // Literals
-  def Literal: Rule1[FLiteral] = rule { Bool | Float | Int | String }
-  // TODO: Add Unit literal `()`
+  def Literal: Rule1[FLiteral] = rule { Bool | Float | Int | String | unit }
+  def unit = rule {
+    info ~ "()" ~> FUnit
+  }
   def Bool = rule {
     info ~ capture(`true` | `false`) ~> ((i, s) => FBool(i, s.trim().toBoolean))
   }

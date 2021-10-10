@@ -85,7 +85,7 @@ object Representation {
           _ <- addNameToContext(tyX.stripPrefix("@"), buildContext)
           ty1 <- typeToString(ty, buildContext)
         } yield ty1
-      case TypeUnit(_)   => "()".pure[StateEither]
+      case TypeUnit(_)   => "Unit".pure[StateEither]
       case TypeInt(_)    => "i32".pure[StateEither]
       case TypeFloat(_)  => "f32".pure[StateEither]
       case TypeString(_) => "str".pure[StateEither]

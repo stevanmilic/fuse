@@ -174,7 +174,7 @@ object Desugar {
 
   def toTermExpr(
       exprs: List[FExpr],
-      letVariable: Option[(String, Option[FType])] = None
+      letVariable: Option[String] = None
   ): StateEither[Term] = exprs match {
     case Nil => EitherT.rightT(TermUnit(UnknownInfo))
     case l @ FLetExpr(info, i, t, e) :: lexprs =>
@@ -194,13 +194,13 @@ object Desugar {
       expr: List[FExpr]
   ): StateEither[Term => Term] =
     for {
-      t1 <- toTermExpr(expr, Some((i, t)))
+      t1 <- toTermExpr(expr, Some(i))
       v <- EitherT.liftF(Context.addName(i))
     } yield t2 => TermLet(info, v, t1, t2): Term
 
   def toTerm(
       e: FExpr,
-      letVariable: Option[(String, Option[FType])] = None
+      letVariable: Option[String] = None
   ): StateEither[Term] =
     e match {
       case FApp(info, e, typeArgs, args) =>
@@ -252,23 +252,7 @@ object Desugar {
               )
             )
         } yield computedTerm
-      case FAbs(info, bindings, Some(rType), expr) =>
-        Context.runE(letVariable match {
-          case Some((f, _)) =>
-            withFixCombinator(
-              info,
-              f,
-              bindings.map(_.t.get).toList,
-              rType,
-              withClosure(info, bindings.toList, toTermExpr(expr.toList))
-            )
-          case _ =>
-            withClosure(info, bindings.toList, toTermExpr(expr.toList))
-        })
-      case FAbs(info, bindings, _, expr) =>
-        Context.runE(
-          withClosure(info, bindings.toList, toTermExpr(expr.toList))
-        )
+      case a: FAbs => toClosure(a, letVariable)
       case FMultiplication(i1, i2) =>
         toTermOperator("&multiply", i1, i2)
       // TODO: Add other operators.
@@ -291,9 +275,29 @@ object Desugar {
       case FInt(info, i)      => EitherT.rightT(TermInt(info, i))
       case FFloat(info, f)    => EitherT.rightT(TermFloat(info, f))
       case FString(info, s)   => EitherT.rightT(TermString(info, s))
+      case FUnit(info)        => EitherT.rightT(TermUnit(info))
       case _ =>
         DesugarError.format(ExpressionNotSupportedDesugarError(e.info))
     }
+
+  def toClosure(abs: FAbs, letVariable: Option[String]): StateEither[Term] =
+    Context.runE(abs match {
+      case FAbs(info, bindings, Some(rType), expr) =>
+        letVariable match {
+          case Some(f) =>
+            withFixCombinator(
+              info,
+              f,
+              bindings.map(_.t.get).toList,
+              rType,
+              withClosure(info, bindings.toList, toTermExpr(expr.toList))
+            )
+          case _ =>
+            withClosure(info, bindings.toList, toTermExpr(expr.toList))
+        }
+      case FAbs(info, bindings, _, expr) =>
+        withClosure(info, bindings.toList, toTermExpr(expr.toList))
+    })
 
   def toTermProj(info: Info, e: FInfixExpr, ids: Seq[FVar]): StateEither[Term] =
     toTerm(e).map(t =>
@@ -383,6 +387,7 @@ object Desugar {
     case FInt(info, i)          => EitherT.rightT(TermInt(info, i))
     case FFloat(info, f)        => EitherT.rightT(TermFloat(info, f))
     case FString(info, s)       => EitherT.rightT(TermString(info, s))
+    case FUnit(info)            => EitherT.rightT(TermUnit(info))
     case _                      => DesugarError.format(CaseNotSupportedDesugarError(p.info))
   }
 
