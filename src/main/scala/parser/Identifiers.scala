@@ -58,6 +58,9 @@ abstract class Identifiers(fileName: String) extends Keywords {
 
   def Comment = rule { '#' ~ (!NewLine ~ ANY).* }
   def CommentLine = rule(quiet(Spacing.* ~ Comment ~ Spacing.* ~ NewLine))
+  def LineEnd = rule { Spacing.* ~ NewLine }
+
+  def EmptyLine = rule { LineEnd | CommentLine }
 
   // Meta rule that matches one or more indented lines with the specified
   // rule. Accepts a `Function0` argument to prevent expansion of the passed
@@ -68,7 +71,7 @@ abstract class Identifiers(fileName: String) extends Keywords {
       r: () => Rule1[T],
       ruleName: String
   ): Rule1[Seq[T]] = rule {
-    ((NewLine | CommentLine).+ ~ Indent ~ r()
+    (EmptyLine.+ ~ Indent ~ r()
       .named(ruleName) ~> ((_, _))).+ ~> ((lines: Seq[(FIndent, T)]) => {
       val (indents, nodes) = lines.unzip
       validateIndents(indents) ~ push(nodes) | failX(

@@ -46,6 +46,18 @@ object BuiltIn {
       )
     ),
     Bind(
+      "&eq",
+      TermAbbBind(
+        TermBuiltin(
+          TypeArrow(
+            UnknownInfo,
+            TypeInt(UnknownInfo),
+            TypeArrow(UnknownInfo, TypeInt(UnknownInfo), TypeBool(UnknownInfo))
+          )
+        )
+      )
+    ),
+    Bind(
       "print",
       TermAbbBind(
         TermBuiltin(

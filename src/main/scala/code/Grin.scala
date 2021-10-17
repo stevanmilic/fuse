@@ -53,8 +53,14 @@ object Grin {
 
   case class LambdaBinding(name: String, expr: Expr)
 
-  def indent(indent: Int, instr: String) =
-    List.fill(indent)(" ").mkString + instr
+  def indent(indent: Int, instr: String) = {
+    val space = List.fill(indent)(" ").mkString
+    val indentedInstr = instr.split("\n").map(i => s"$space$i").mkString("\n")
+    instr.endsWith("\n") match {
+      case true => s"$indentedInstr\n"
+      case _    => indentedInstr
+    }
+  }
 
   def indentExpr(indent: Int, e: Expr): Expr = e match {
     case BindExpr(expr, variable, value, _) =>
@@ -65,13 +71,15 @@ object Grin {
         case c: CaseClause => c
       }
       CaseExpr(indentExpr(indent, expr), t, indent)
-    case CaseClause(pattern, expr, _) => CaseClause(pattern, expr, indent)
+    case CaseClause(pattern, expr, _) =>
+      CaseClause(pattern, expr, indent)
     case MultiLineExpr(exprs, expr) =>
       MultiLineExpr(
         exprs.map(l => BindExpr(l.repr, l.variable, l.values, indent)),
         indentExpr(indent, expr)
       )
     case PureExpr(expr, _) => PureExpr(indentExpr(indent, expr), indent)
+    case DoExpr(expr, _)   => DoExpr(expr, indent)
     case _                 => e
   }
 
@@ -91,7 +99,16 @@ object Grin {
         val indentedExpr = indentExpr(i + 1, e)
         show"$patternLine$indentedExpr"
       case CaseExpr(expr, cases, i) =>
-        val matchLine = indent(i, show"case $expr of")
+        val matchLine = expr match {
+          case MultiLineExpr(exprs, result) =>
+            val prepExpr = exprs
+              .filter(!_.repr.isBlank)
+              .map(e => indentExpr(i, e).show)
+              .mkString("\n")
+            val caseOf = indent(i, show"case $result of")
+            if (prepExpr.isEmpty) caseOf else s"$prepExpr\n$caseOf"
+          case _ => indent(i, show"case $expr of")
+        }
         val caseLines = cases.map((_: Expr).show).mkString("\n")
         show"$matchLine\n$caseLines"
       case PureExpr(expr, i) =>
@@ -368,10 +385,11 @@ object Grin {
           ty1 <- typeCheck(e)
           exprType <- TypeChecker.unfoldType(ty1)
           t <- pureToExpr(e)
+          (prepExprs, result) <- prepParameters(t)
           p <- patterns.traverse { case (p, e) =>
             Context.run(toCaseClause(p, e, exprType))
           }
-        } yield CaseExpr(t, p)
+        } yield CaseExpr(MultiLineExpr(prepExprs, Value(result)), p)
       case TermMethodProj(_, t, method) =>
         for {
           tyT1 <- typeCheck(t)
@@ -388,7 +406,7 @@ object Grin {
       // NOTE: There's an issue with grin llvm code generation, where
       // an error would be thrown if we use the grin `()` unit value
       // for return in functions. Thus we use the integer `0` instead.
-      case TermUnit(_)      => State.pure(Value("0"))
+      case TermUnit(_) => State.pure(Value("0"))
       case TermVar(_, idx, _) =>
         for {
           variable <- toVariable(idx)
@@ -502,6 +520,13 @@ object Grin {
             )
           )
         )
+      case c: CaseExpr =>
+        addTempVariable().flatMap(p => {
+          val doExpr = DoExpr(c, c.indent)
+          prepParameters(
+            BindExpr(show"$p <- $doExpr", p, List(doExpr))
+          )
+        })
       case v @ Value(s) if s.contains("'") =>
         addTempVariable().flatMap(p =>
           prepParameters(BindExpr(s"$p <- fetch $s", p, List(v)))
@@ -517,8 +542,12 @@ object Grin {
       getResult(r).map { case (prepExprs, v) =>
         (exprs :++ prepExprs, v)
       }
-    case i: Value         => State.pure(List(), i)
-    case c: ClosureValue  => State.pure(List(), c)
+    case i: Value        => State.pure(List(), i)
+    case c: ClosureValue => State.pure(List(), c)
+    case v @ FunctionValue(f, 0) =>
+      addTempVariable().flatMap(p =>
+        getResult(BindExpr(s"$p <- $f", p, List(v)))
+      )
     case f: FunctionValue => State.pure(List(), f)
     case a @ AppExpr(e, arity, _) if arity >= 1 =>
       addTempVariable().map(p => {
@@ -555,6 +584,8 @@ object Grin {
   def toVariable(idx: Integer): ContextState[String] =
     getNameFromIndex(idx).map(_ match {
       case "&add"       => "_prim_int_add"
+      case "&eq"        => "_prim_int_eq"
+      case "&multiply"  => "_prim_int_mul"
       case "print"      => "_prim_string_print"
       case "int_to_str" => "_prim_int_str"
       case v if v.startsWith(Desugar.RecursiveFunctionParamPrefix) =>
