@@ -25,25 +25,15 @@ object Context {
   val emptyContext = (List[(String, Binding)](), 0)
   val WildcardName = "_"
 
-  def cleanContext(ctx: Context): Context =
-    (
-      ctx._1.filter {
-        case (_, TempVarBind) => false
-        case _                => true
-      },
-      ctx._2
-    )
-
   def addName(n: String): ContextState[String] = addBinding(n, NameBind)
 
-  // TODO: Remove TempVarBind and just increment the num of vars in context.
   def addBinding(n: String, b: Binding): ContextState[String] =
     State(ctx => {
       val currVarBindings = ctx._2
       val (name, numOfVarBindings) = b match {
         case _: VarBind if n.startsWith(Desugar.RecursiveFunctionParamPrefix) =>
           (n, currVarBindings)
-        case _: VarBind | TempVarBind =>
+        case _: VarBind =>
           (s"$n$currVarBindings", currVarBindings + 1)
         case _ => (n, currVarBindings)
       }
@@ -54,16 +44,16 @@ object Context {
     State.inspect(c => c._1.exists { case (i, _) => i == x })
 
   def pickFreshName(x: String): ContextState[String] =
-    isNameBound(x).flatMap(_ match {
-      case true  => pickFreshName(s"$x'")
-      case false => addName(x)
+    State(ctx => {
+      val c = ctx.map(_ + 1)
+      (c, s"$x${c._2}")
     })
 
   def indexToName(c: Context, x: Int): Option[String] =
-    cleanContext(c)._1.lift(x).map { case ((i, _)) => i }
+    c._1.lift(x).map { case ((i, _)) => i }
 
   def nameToIndex(c: Context, x: String): Option[Int] =
-    cleanContext(c)._1.indexWhere { case ((i, _)) => i == x } match {
+    c._1.indexWhere { case ((i, _)) => i == x } match {
       case v if v >= 0 => Some(v)
       case _           => None
     }
@@ -93,7 +83,7 @@ object Context {
   def getBinding(info: Info, idx: Int): StateEither[Binding] =
     EitherT
       .liftF(State.inspect { (ctx: Context) =>
-        cleanContext(ctx)._1.lift(idx)
+        ctx._1.lift(idx)
       })
       .flatMap(_ match {
         case Some((_, b)) => bindingShift(idx + 1, b).pure[StateEither]

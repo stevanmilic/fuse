@@ -92,7 +92,7 @@ object GrinUtils {
     }
 
   def addTempVariable(name: String = "p"): ContextState[String] =
-    Context.addBinding(name, TempVarBind)
+    pickFreshName(name)
 
   def getNameFromType(ty: Type): ContextState[String] =
     getNameFromIndex(TypeChecker.findRootTypeIndex(ty).get)
