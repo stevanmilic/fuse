@@ -2,12 +2,12 @@ package core
 
 import cats.data.EitherT
 import cats.data.State
-import cats.implicits._
-import core.Context._
-import core.Terms._
-import core.Types._
+import cats.implicits.*
+import core.Context.*
+import core.Terms.*
+import core.Types.*
 import fuse.Utils.consoleError
-import parser.Info._
+import parser.Info.*
 
 sealed trait TypeError
 

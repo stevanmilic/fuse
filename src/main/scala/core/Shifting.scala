@@ -1,8 +1,8 @@
 package core
 
-import core.Bindings._
-import core.Types._
-import parser.Info._
+import core.Bindings.*
+import core.Types.*
+import parser.Info.*
 
 object Shifting {
 

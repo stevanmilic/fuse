@@ -4,18 +4,18 @@ import cats.data.EitherT
 import cats.data.OptionT
 import cats.data.State
 import cats.data.StateT
-import cats.implicits._
-import core.Bindings._
-import core.Context._
-import core.Shifting._
-import core.Terms._
-import core.Types._
-import parser.FuseParser._
-import parser.Info._
-import parser.Info.ShowInfo._
+import cats.implicits.*
+import core.Bindings.*
+import core.Context.*
+import core.Shifting.*
+import core.Terms.*
+import core.Types.*
+import parser.FuseParser.*
+import parser.Info.*
+import parser.Info.ShowInfo.*
 
 import scala.annotation.tailrec
-import scala.util._
+import scala.util.*
 
 object TypeChecker {
   val MainFunction = "main"

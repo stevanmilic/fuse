@@ -3,17 +3,17 @@ package fuse
 import cats.data.EitherT
 import cats.data.State
 import cats.effect.IO
-import cats.implicits._
+import cats.implicits.*
 import code.Grin
-import core.Bindings._
-import core.Context._
-import core._
-import org.parboiled2._
+import core.Bindings.*
+import core.Context.*
+import core.*
+import org.parboiled2.*
 import parser.FuseParser
-import parser.FuseParser._
+import parser.FuseParser.*
 import parser.ParserErrorFormatter
 
-import java.io._
+import java.io.*
 import scala.util.Either
 import scala.util.Failure
 import scala.util.Success

@@ -1,7 +1,7 @@
 package fuse
 
-import parser.Info._
-import cats.implicits._
+import parser.Info.*
+import cats.implicits.*
 
 object Utils {
   def consoleError(message: String, info: Info, code: Option[String] = None) = {

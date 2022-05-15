@@ -1,10 +1,10 @@
 package parser
 
-import org.parboiled2._
+import org.parboiled2.*
 
 object Types {
-  import Identifiers._
-  import Info._
+  import Identifiers.*
+  import Info.*
 
   // Type Params
   case class FTypeParam(
@@ -39,11 +39,11 @@ object Types {
 }
 
 abstract class Types(fileName: String) extends Identifiers(fileName) {
-  import Types._
+  import Types.*
 
   // Type Definitions
   def TypeParam = rule {
-    info ~ identifier ~ (`=` ~ Type.named("type")).? ~> FTypeParam
+    info ~ identifier ~ (`=` ~ Type.named("type")).? ~> FTypeParam.apply
   }
   def TypeParamClause = rule { '[' ~ TypeParam.+(',') ~ ']' }
 
@@ -60,21 +60,21 @@ abstract class Types(fileName: String) extends Identifiers(fileName) {
         .named("type") ~> (Seq(_)) | '(' ~ SimpleType.named("type").*(',') ~ ')'
     }
     rule {
-      info ~ FuncArgs ~ `->` ~ Type ~> FFuncType
+      info ~ FuncArgs ~ `->` ~ Type ~> FFuncType.apply
     }
   }
   def TupleType = rule {
-    info ~ '(' ~ Type.*(',') ~ ')' ~> FTupleType
+    info ~ '(' ~ Type.*(',') ~ ')' ~> FTupleType.apply
   }
   def SimpleType = rule {
-    info ~ identifier ~ TypeArgs.? ~> FSimpleType
+    info ~ identifier ~ TypeArgs.? ~> FSimpleType.apply
   }
-  def UnitType = rule { info ~ `Unit` ~> FUnitType }
+  def UnitType = rule { info ~ `Unit` ~> FUnitType.apply }
   def TypeList = rule { Type.+(',') }
   def TypeArgs = rule { '[' ~ TypeList.named("types") ~ ']' }
 
   def param = rule {
-    info ~ identifier ~ `:` ~ Type.named("type") ~> FParam
+    info ~ identifier ~ `:` ~ Type.named("type") ~> FParam.apply
   }
   def params = rule { param.+(',') }
 }

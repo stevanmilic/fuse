@@ -4,15 +4,15 @@ import cats.data.EitherT
 import cats.data.OptionT
 import cats.data.State
 import cats.data.StateT
-import cats.implicits._
-import core.Bindings._
-import core.Terms._
-import core.Types._
-import parser.Info._
+import cats.implicits.*
+import core.Bindings.*
+import core.Terms.*
+import core.Types.*
+import parser.Info.*
 
-import scala.util._
+import scala.util.*
 
-import Shifting._
+import Shifting.*
 
 object Context {
   type Context = Tuple2[List[(String, Binding)], Int]

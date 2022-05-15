@@ -1,0 +1,30 @@
+type List:
+    Cons(h: i32, t: List)
+    Nil
+
+fun println(s: str) -> Unit
+    let _ = print(s)
+    let _ = print("\n")
+    ()
+
+impl List:
+    fun map(f: i32 -> i32) -> List
+        let iter = (acc: List, l: List) -> List => {
+            match l:
+                Nil => acc
+                Cons(h, t) => Cons(f(h), iter(acc, t))
+        }
+        iter(Nil, this)
+
+    fun print() -> Unit
+        match this:
+            Nil => println("---")
+            Cons(h, t) => {
+                let _ = println(int_to_str(h))
+                t.print()
+            }
+
+fun main() -> Unit
+    let l = Cons(2, Cons(3, Nil))
+    let l1 = l.map((v: i32) => v + 1)
+    l1.print()

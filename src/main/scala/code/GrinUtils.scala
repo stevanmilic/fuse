@@ -2,14 +2,14 @@ package code
 
 import cats.data.State
 import cats.data.StateT
-import cats.implicits._
-import core.Bindings._
+import cats.implicits.*
+import core.Bindings.*
 import core.Context
-import core.Context._
+import core.Context.*
 import core.Desugar
-import core.Terms._
+import core.Terms.*
 import core.TypeChecker
-import core.Types._
+import core.Types.*
 import parser.Info.UnknownInfo
 
 object GrinUtils {

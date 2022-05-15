@@ -3,17 +3,17 @@ package core
 import cats.data.EitherT
 import cats.data.State
 import cats.data.StateT
-import cats.implicits._
-import core.Bindings._
-import core.Context._
-import core.Terms._
-import core.Types._
-import parser.Expressions._
-import parser.FuseParser._
-import parser.Identifiers._
-import parser.Info.ShowInfo._
-import parser.Info._
-import parser.Types._
+import cats.implicits.*
+import core.Bindings.*
+import core.Context.*
+import core.Terms.*
+import core.Types.*
+import parser.Expressions.*
+import parser.FuseParser.*
+import parser.Identifiers.*
+import parser.Info.ShowInfo.*
+import parser.Info.*
+import parser.Types.*
 
 // TODO: Add constants for prefixes for specific names in the context.
 

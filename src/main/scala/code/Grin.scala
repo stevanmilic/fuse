@@ -3,17 +3,17 @@ package code
 import cats.Show
 import cats.data.State
 import cats.data.StateT
-import cats.implicits._
-import core.Bindings._
+import cats.implicits.*
+import core.Bindings.*
 import core.Context
-import core.Context._
+import core.Context.*
 import core.Desugar
-import core.Terms._
+import core.Terms.*
 import core.TypeChecker
-import core.Types._
+import core.Types.*
 import parser.Info.UnknownInfo
 
-import GrinUtils._
+import GrinUtils.*
 
 object Grin {
   val MainFunction = "grinMain"
@@ -156,9 +156,8 @@ object Grin {
           funParameter <- addTempVariable()
           caseClauses <- partialFun.traverse(partialFunToCase(_, funParameter))
           caseExpr = CaseExpr(Value(funVariable), caseClauses.flatten)
-          abs1 = Abs(funParameter, caseExpr)
-          abs2 = Abs(funVariable, abs1)
-        } yield show"apply $abs2"
+          abs = Abs(funVariable, Abs(funParameter, caseExpr))
+        } yield show"apply $abs"
       case true => "".pure[ContextState]
     }
 

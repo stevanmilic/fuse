@@ -1,6 +1,6 @@
 package parser
 
-import org.parboiled2._
+import org.parboiled2.*
 
 import scala.language.implicitConversions
 import scala.util.Try
@@ -33,8 +33,8 @@ object Identifiers {
 
 abstract class Identifiers(fileName: String) extends Keywords {
   import CharPredicate.{AlphaNum}
-  import Identifiers._
-  import Info._
+  import Identifiers.*
+  import Info.*
 
   implicit def any(s: String): Rule0 = rule {
     str(s) ~ WS
@@ -48,7 +48,7 @@ abstract class Identifiers(fileName: String) extends Keywords {
   def info = rule { atomic("") ~> (() => FileInfo(loc, fileName)) }
 
   def identifier = rule {
-    quiet(Spacing.*) ~ capture(IdentifierPart) ~> FIdentifier
+    quiet(Spacing.*) ~ capture(IdentifierPart) ~> FIdentifier.apply
   }
   def IdentifierPart = rule { AlphaNum_.named("alphanumeric").+ }
   def NewLine = rule(quiet('\r'.? ~ '\n'))

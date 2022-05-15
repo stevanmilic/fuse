@@ -1,10 +1,10 @@
 package core
 
 import cats.data.State
-import core.Context._
-import utest._
+import core.Context.*
+import utest.*
 
-import Representation._
+import Representation.*
 
 object RepresentationSpec extends TestSuite {
   val tests = Tests {

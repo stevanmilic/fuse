@@ -1,6 +1,6 @@
 package parser
 
-import org.parboiled2._
+import org.parboiled2.*
 
 import scala.annotation.switch
 

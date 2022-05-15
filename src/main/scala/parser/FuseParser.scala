@@ -1,13 +1,13 @@
 package parser
 
-import org.parboiled2._
+import org.parboiled2.*
 import scala.util.Either
 
 object FuseParser {
-  import Identifiers._
-  import Types._
+  import Identifiers.*
+  import Types.*
   import Expressions.FExpr
-  import Info._
+  import Info.*
 
   sealed trait FDecl
 
@@ -99,9 +99,9 @@ object FuseParser {
 
 class FuseParser(val input: ParserInput, fileName: String)
     extends Expressions(fileName) {
-  import FuseParser._
-  import Identifiers._
-  import Types._
+  import FuseParser.*
+  import Identifiers.*
+  import Types.*
   import Expressions.FExpr
 
   def Module = rule { Decl.+(EmptyLine.+) ~ quiet(WL) ~ quiet(EOI) }
@@ -118,7 +118,7 @@ class FuseParser(val input: ParserInput, fileName: String)
   }
 
   def TypeDecl = rule { `type` ~ info ~ identifier }
-  def PrimitiveTypeDecl = rule { TypeDecl ~> FPrimitiveTypeDecl }
+  def PrimitiveTypeDecl = rule { TypeDecl ~> FPrimitiveTypeDecl.apply }
 
   def VariantTypeDecl = {
     def VariantTypeValueArgs = rule {
@@ -126,32 +126,32 @@ class FuseParser(val input: ParserInput, fileName: String)
     }
 
     val VariantTypeValue = () =>
-      rule { info ~ identifier ~ VariantTypeValueArgs.? ~> FVariantTypeValue }
+      rule { info ~ identifier ~ VariantTypeValueArgs.? ~> FVariantTypeValue.apply }
 
     rule {
       TypeDecl ~ TypeParamClause.? ~ `:` ~ oneOrMoreWithIndent(
         VariantTypeValue,
         "value"
-      ) ~> FVariantTypeDecl
+      ) ~> FVariantTypeDecl.apply
     }
   }
 
   def RecordTypeDecl = {
-    val RecordTypeField = () => rule { param ~> FRecordTypeField }
+    val RecordTypeField = () => rule { param ~> FRecordTypeField.apply }
     rule {
       TypeDecl ~ TypeParamClause.named("type params").? ~ `:` ~
-        oneOrMoreWithIndent(RecordTypeField, "field") ~> FRecordTypeDecl
+        oneOrMoreWithIndent(RecordTypeField, "field") ~> FRecordTypeDecl.apply
     }
   }
 
   def TupleTypeDecl = rule {
     TypeDecl ~ TypeParamClause.? ~ "(" ~ TypeList.named(
       "types"
-    ) ~ ")" ~> FTupleTypeDecl
+    ) ~ ")" ~> FTupleTypeDecl.apply
   }
 
   def TypeAlias = rule {
-    TypeDecl ~ TypeParamClause.? ~ `=` ~ Type ~> FTypeAlias
+    TypeDecl ~ TypeParamClause.? ~ `=` ~ Type ~> FTypeAlias.apply
   }
 
   def FuncSig = {
@@ -160,13 +160,13 @@ class FuseParser(val input: ParserInput, fileName: String)
         .named("type params")
         .? ~ "(" ~ params
         .named("parameters")
-        .? ~ ")" ~ `->` ~ Type ~> FFuncSig
+        .? ~ ")" ~ `->` ~ Type ~> FFuncSig.apply
     }
   }
 
   def FuncDecl = {
     rule {
-      FuncSig ~ BlockExpr ~> FFuncDecl
+      FuncSig ~ BlockExpr ~> FFuncDecl.apply
     }
   }
 
@@ -178,17 +178,17 @@ class FuseParser(val input: ParserInput, fileName: String)
         TraitFunc,
         "function"
       ) ~>
-        FTraitDecl
+        FTraitDecl.apply
     }
   }
 
   val TypeFunc = () => FuncDecl
   def ImplFuncDecls = oneOrMoreWithIndent(TypeFunc, "function")
   def TraitInstance = rule {
-    `impl` ~ info ~ identifier ~ TypeParamClause.? ~ `for` ~ identifier ~ TypeParamClause.? ~ `:` ~ ImplFuncDecls ~> FTraitInstance
+    `impl` ~ info ~ identifier ~ TypeParamClause.? ~ `for` ~ identifier ~ TypeParamClause.? ~ `:` ~ ImplFuncDecls ~> FTraitInstance.apply
   }
 
   def TypeFuncDecls = rule {
-    `impl` ~ info ~ identifier ~ TypeParamClause.? ~ `:` ~ ImplFuncDecls ~> FTypeFuncDecls
+    `impl` ~ info ~ identifier ~ TypeParamClause.? ~ `:` ~ ImplFuncDecls ~> FTypeFuncDecls.apply
   }
 }

@@ -1,13 +1,13 @@
 package parser
 
 import scala.util.{Failure, Success}
-import utest._
-import org.parboiled2._
+import utest.*
+import org.parboiled2.*
 
 object ExpressionsSpec extends TestSuite {
-  import Identifiers._
-  import Types._
-  import Expressions._
+  import Identifiers.*
+  import Types.*
+  import Expressions.*
 
   val tests = Tests {
     test("parse string") {

@@ -1,9 +1,10 @@
 package parser
 
-import org.parboiled2._
-import java.lang.{StringBuilder => JStringBuilder}
+import scala.language.adhocExtensions
+import org.parboiled2.*
+import java.lang.{StringBuilder as JStringBuilder}
 import fuse.Utils.consoleError
-import Info._
+import Info.*
 
 class ParserErrorFormatter(fileName: String) extends ErrorFormatter {
 
@@ -13,7 +14,7 @@ class ParserErrorFormatter(fileName: String) extends ErrorFormatter {
   ): String = {
     val problem = formatProblem(error, input)
     val expected = formatExpected(error)
-    import error._
+    import error.*
     consoleError(
       s"${problem.charAt(0).toLower.toString + problem.substring(1)}$expected",
       FileInfo(

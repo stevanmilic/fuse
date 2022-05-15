@@ -1,16 +1,16 @@
 package fuse
 
-import cats.effect._
-import cats.effect._
-import cats.implicits._
-import com.monovore.decline._
-import com.monovore.decline.effect._
+import cats.effect.*
+import cats.effect.*
+import cats.implicits.*
+import com.monovore.decline.*
+import com.monovore.decline.effect.*
 import core.Context.Error
 
 import java.io.File
-import java.io._
+import java.io.*
 
-import sys.process._
+import sys.process.*
 
 case class CompileFile(fuseFile: String)
 
@@ -31,7 +31,7 @@ object Fuse
 
   val compileOpts: Opts[CompileFile] =
     Opts.subcommand("build", "Compile fuse source code file.") {
-      (fileOpts).map(CompileFile)
+      (fileOpts).map(CompileFile.apply)
     }
 
   override def main: Opts[IO[ExitCode]] =

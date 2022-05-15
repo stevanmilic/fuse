@@ -1,9 +1,9 @@
 package core
 
-import core.Bindings._
-import core.Terms._
-import core.Types._
-import parser.Info._
+import core.Bindings.*
+import core.Terms.*
+import core.Types.*
+import parser.Info.*
 
 object BuiltIn {
   // TODO: Add built-ins for the rest of the prim ops.

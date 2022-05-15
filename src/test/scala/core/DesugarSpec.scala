@@ -1,12 +1,12 @@
 package core
 
 import cats.data.State
-import core.Context._
-import parser.Expressions._
-import parser.Identifiers._
-import parser.Types._
-import parser.FuseParser._
-import utest._
+import core.Context.*
+import parser.Expressions.*
+import parser.Identifiers.*
+import parser.Types.*
+import parser.FuseParser.*
+import utest.*
 
 object DesugarSpec extends TestSuite {
   val tests = Tests {

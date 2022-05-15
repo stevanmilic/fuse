@@ -1,6 +1,6 @@
 package core
 
-import parser.Info._
+import parser.Info.*
 
 object Types {
   sealed trait Kind
@@ -43,7 +43,7 @@ object Types {
 }
 
 object Terms {
-  import Types._
+  import Types.*
 
   sealed trait Term
 
@@ -129,8 +129,8 @@ object Terms {
 }
 
 object Bindings {
-  import Types._
-  import Terms._
+  import Types.*
+  import Terms.*
 
   sealed trait Binding
 

@@ -2,10 +2,10 @@ package core
 
 import cats.data.EitherT
 import cats.data.State
-import cats.implicits._
-import core.Types._
-import core.Bindings._
-import Context._
+import cats.implicits.*
+import core.Types.*
+import core.Bindings.*
+import Context.*
 
 object Representation {
   def typeRepresentation(
