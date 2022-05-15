@@ -3,8 +3,8 @@ type List:
     Nil
 
 fun println(s: str) -> Unit
-    let _ = print(s)
-    let _ = print("\n")
+    print(s)
+    print("\n")
     ()
 
 impl List:

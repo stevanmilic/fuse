@@ -184,7 +184,11 @@ object Desugar {
       } yield lt(le)
     case h :: Nil => toTerm(h, letVariable)
     case expr :: t =>
-      DesugarError.format(ExpressionNotValidDesugarError(expr.info))
+      // NOTE: When an expression isn't assigned to a variable (through let
+      // binding) we are implicitly wrapping it to a let expression that's a
+      // no-op. This is primarly to allow side-effects as they are not
+      // returning a value .e.g. ``print`` function.
+      toTermExpr(FLetExpr(expr.info, FIdentifier("_"), None, List(expr)) :: t)
   }
 
   def withTermLet(
