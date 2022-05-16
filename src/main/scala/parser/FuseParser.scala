@@ -126,7 +126,9 @@ class FuseParser(val input: ParserInput, fileName: String)
     }
 
     val VariantTypeValue = () =>
-      rule { info ~ identifier ~ VariantTypeValueArgs.? ~> FVariantTypeValue.apply }
+      rule {
+        info ~ identifier ~ VariantTypeValueArgs.? ~> FVariantTypeValue.apply
+      }
 
     rule {
       TypeDecl ~ TypeParamClause.? ~ `:` ~ oneOrMoreWithIndent(

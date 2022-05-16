@@ -108,7 +108,6 @@ object Desugar {
       functions.toList
         .traverse(f => bind(FFuncDecl(modifySignature(f.sig), f.exprs)))
         .map(_.flatten)
-
     case _ =>
       DesugarError.format(DeclarationNotSupportedDesugarError(d.info))
   }
@@ -182,7 +181,7 @@ object Desugar {
         lt <- withTermLet(info, i.value, t, e.toList)
         le <- toTermExpr(lexprs)
       } yield lt(le)
-    case h :: Nil => toTerm(h, letVariable)
+    case h :: Nil  => toTerm(h, letVariable)
     case expr :: t =>
       // NOTE: When an expression isn't assigned to a variable (through let
       // binding) we are implicitly wrapping it to a let expression that's a
@@ -300,7 +299,16 @@ object Desugar {
             withClosure(info, bindings.toList, toTermExpr(expr.toList))
         }
       case FAbs(info, bindings, _, expr) =>
-        withClosure(info, bindings.toList, toTermExpr(expr.toList))
+        letVariable match {
+          case Some(f) =>
+            val letBinding = FBinding(info, FIdentifier(toRecAbsId(f)))
+            withClosure(
+              info,
+              (letBinding :: bindings.toList),
+              toTermExpr(expr.toList)
+            ).map(TermFix(info, _))
+          case _ => withClosure(info, bindings.toList, toTermExpr(expr.toList))
+        }
     })
 
   def toTermProj(info: Info, e: FInfixExpr, ids: Seq[FVar]): StateEither[Term] =
@@ -320,8 +328,11 @@ object Desugar {
           v <- EitherT.liftF(Context.addName(i.value))
           term <- acc
         } yield TermClosure(info, v, Some(typ), term)
-      case (FBinding(info, _, _), _) =>
-        DesugarError.format(TypeAnnotationRequiredDesugarError(info))
+      case (FBinding(info, i, _), acc) =>
+        for {
+          v <- EitherT.liftF(Context.addName(i.value))
+          term <- acc
+        } yield TermClosure(info, v, None, term)
     }
 
   def withFixCombinator(
@@ -392,7 +403,7 @@ object Desugar {
     case FFloat(info, f)        => EitherT.rightT(TermFloat(info, f))
     case FString(info, s)       => EitherT.rightT(TermString(info, s))
     case FUnit(info)            => EitherT.rightT(TermUnit(info))
-    case _                      => DesugarError.format(CaseNotSupportedDesugarError(p.info))
+    case _ => DesugarError.format(CaseNotSupportedDesugarError(p.info))
   }
 
   def toTermVar(info: Info, i: String): ContextState[Option[Term]] =

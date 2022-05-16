@@ -13,7 +13,7 @@
 - [x] Type Checker for System F with ADT and Pattern Matching
 - [x] Improve Type Error Messages
 - [ ] Code Generation to LLVM
-- [ ] Implement Type Inference (HM or Bidirectional)
+- [ ] Implement Type Inference for higher order types (HM or Bidirectional)
 - [ ] Add modules & imports
 - [ ] Implement Type Classes
 

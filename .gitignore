@@ -10,3 +10,5 @@ target/
 project/metals.sbt
 
 .git/
+*.out
+.bsp/

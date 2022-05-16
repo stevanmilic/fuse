@@ -1,0 +1,62 @@
+type List[T]:
+    Cons(h: T, t: List[T])
+    Nil
+
+type Option[T]:
+    None
+    Some(T)
+
+impl Option[T]:
+    fun is_some() -> bool
+        match this:
+            Some(v) => true
+            _ => false
+
+    fun is_none() -> bool
+        match this:
+            Some(v) => false
+            _ => true
+
+type Tuple[A, B](A, B)
+
+type Type:
+    TypeVar(index: i32, length: i32)
+    TypeId(i: str)
+    TypeArrow(t1: Type, t2: Type)
+    TypeRecord(fields: List[Tuple[str, Type]])
+    TypeVariant(values: List[Tuple[str, Type]])
+    TypeUnit
+    TypeBool
+    TypeInt
+    TypeString
+    TypeFloat
+
+type Term:
+    TermTrue
+    TermFalse
+    TermInt(i: i32)
+    TermFloat(f: f32)
+    TermString(s: str)
+    TermUnit
+
+fun println(s: str) -> Unit
+    print(s)
+    print("\n")
+    ()
+
+fun type_of(t: Term) -> Option[Type]
+    match t:
+        TermTrue => Some(TypeBool())
+        TermFalse => Some(TypeBool())
+        TermInt(i) => Some(TypeInt())
+        TermFloat(f) => Some(TypeFloat())
+        TermString(s) => Some(TypeString())
+        TermUnit => Some(TypeUnit())
+        _ => None
+
+fun is_type() -> bool
+    let ty = type_of(TermTrue())
+    ty.is_some()
+
+fun main() -> i32
+    0

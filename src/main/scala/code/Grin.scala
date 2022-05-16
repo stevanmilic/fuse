@@ -461,13 +461,13 @@ object Grin {
     case PatternNode(_, node, vars) =>
       for {
         (_, bindVariables) <- toContextState(
-          TypeChecker.typeOfPattern(p, matchExprType, dummyType)
+          TypeChecker.inferPattern(p, matchExprType)
         )
         cpat = s"(${cTag(node)} ${bindVariables.mkString(" ")})"
         caseClause <- buildCaseClause(cpat, e)
       } yield caseClause
     case PatternDefault(_) => buildCaseClause("#default", e)
-    case t: Term           => pureToExpr(t).flatMap(cpat => buildCaseClause(cpat.show, e))
+    case t: Term => pureToExpr(t).flatMap(cpat => buildCaseClause(cpat.show, e))
   }
 
   def buildCaseClause(cpat: String, t: Term)(implicit

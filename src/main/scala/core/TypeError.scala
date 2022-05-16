@@ -197,6 +197,49 @@ case class WrongBindingForVariableTypeError(
 case class MainFunctionNotFoundTypeError(code: String = "E0029")
     extends TypeError
 
+case class MultipleSolutionsFoundTypeError(
+    info: Info,
+    typeIdx: Int,
+    code: String = "E0030"
+) extends TypeError
+
+case class UnboundExistentialVariableTypeError(
+    info: Info,
+    eA: TypeEVar,
+    code: String = "E0031"
+) extends TypeError
+
+case class FailedToInstantiateTypeError(
+    info: Info,
+    fromType: Type,
+    toType: Type,
+    code: String = "E0032"
+) extends TypeError
+
+case class ExistentialVariableNotFoundTypeError(
+    eA: TypeEVar,
+    code: String = "E0033"
+) extends TypeError
+
+case class InvalidSubtypeTypeError(
+    info: Info,
+    termType: Type,
+    expectedType: Type,
+    code: String = "E0034"
+) extends TypeError
+
+case class MissingTypeAnnotation(
+    info: Info,
+    ty: Type,
+    code: String = "E0035"
+) extends TypeError
+
+case class MatchNodePatternNotFound(
+    info: Info,
+    nodePatter: PatternNode,
+    code: String = "E0036"
+) extends TypeError
+
 object TypeError {
   def format[T](error: TypeError): StateEither[T] = {
     val errorMessage = error match {
@@ -315,6 +358,12 @@ object TypeError {
           info,
           Some(code)
         )
+      case MatchNodePatternNotFound(info, pattern, code) =>
+        consoleError(
+          s"`${pattern.tag}` type not found",
+          info,
+          Some(code)
+        ).pure[StateEither]
       case MatchCasesTypeError(
             info,
             caseExprType,
@@ -476,7 +525,7 @@ object TypeError {
           Some(code)
         )
       case BindingNotFoundTypeError(info, code) =>
-        consoleError("variable not found", info, Some(code)).pure[StateEither]
+        consoleError("symbol not found", info, Some(code)).pure[StateEither]
       case NoKindForTypeError(info, _, code) =>
         consoleError("no kind recorded for type", info, Some(code))
           .pure[StateEither]
@@ -503,6 +552,58 @@ object TypeError {
       case MainFunctionNotFoundTypeError(code) =>
         consoleError("`main` function not defined", UnknownInfo, Some(code))
           .pure[StateEither]
+      case MultipleSolutionsFoundTypeError(info, idx, code) =>
+        EitherT.liftF(
+          State.inspect((ctx: Context) =>
+            consoleError(
+              s"multiple solutions found for `${indexToName(ctx, idx)}`",
+              info,
+              Some(code)
+            )
+          )
+        )
+      case MissingTypeAnnotation(info, termType, code) =>
+        Representation
+          .typeToString(termType)
+          .map(name =>
+            consoleError(
+              s"type annotation is missing for type `$name`",
+              info,
+              Some(code)
+            )
+          )
+      case FailedToInstantiateTypeError(info, fromType, toType, code) =>
+        for {
+          fromTypeName <- Representation.typeToString(fromType)
+          toTypeName <- Representation.typeToString(toType)
+        } yield consoleError(
+          s"can't determine the type of variable, type annotation is required",
+          info,
+          Some(code)
+        )
+      case UnboundExistentialVariableTypeError(info, eA, code) =>
+        consoleError(
+          s"`${eA.name}` existential variable not bound",
+          eA.info,
+          Some(code)
+        )
+          .pure[StateEither]
+      case ExistentialVariableNotFoundTypeError(eA, code) =>
+        consoleError(
+          s"`${eA.name}` existential variable not found",
+          eA.info,
+          Some(code)
+        )
+          .pure[StateEither]
+      case InvalidSubtypeTypeError(info, termType, expectedType, code) =>
+        for {
+          termTypeName <- Representation.typeToString(termType)
+          expectedTypeName <- Representation.typeToString(expectedType)
+        } yield consoleError(
+          s"expected type of `$expectedTypeName`, found `$termTypeName`",
+          info,
+          Some(code)
+        )
     }
     errorMessage.flatMap(e => EitherT.leftT[ContextState, T](e))
   }

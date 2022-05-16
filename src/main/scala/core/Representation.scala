@@ -13,16 +13,7 @@ object Representation {
   ): Either[String, List[String]] =
     types
       .traverse(bind => {
-        val repr = bind.b match {
-          case TypeVarBind(k) =>
-            Representation.kindToString(k).pure[StateEither]
-          case VarBind(ty) =>
-            Context.runE(Representation.typeToString(ty, buildContext = true))
-          case TypeAbbBind(_, Some(k)) =>
-            Representation.kindToString(k).pure[StateEither]
-          case TermAbbBind(_, Some(ty)) =>
-            Context.runE(Representation.typeToString(ty, buildContext = true))
-        }
+        val repr = bindingToType(bind.b)
         repr.map2(EitherT.liftF(addName(bind.i))) { case (repr, id) =>
           s"$id: $repr"
         }
@@ -30,6 +21,24 @@ object Representation {
       .value
       .runEmptyA
       .value
+
+  def bindingToType(b: Binding): StateEither[String] = b match {
+    case TypeVarBind(k) =>
+      Representation.kindToString(k).pure[StateEither]
+    case VarBind(ty) =>
+      Context.runE(Representation.typeToString(ty, buildContext = true))
+    case TypeAbbBind(_, Some(k)) =>
+      Representation.kindToString(k).pure[StateEither]
+    case TypeEMarkBind => "[mark]".pure
+    case TypeEFreeBind => "[free]".pure
+    case TypeESolutionBind(ty) =>
+      Context
+        .runE(Representation.typeToString(ty, buildContext = true))
+        .map(s => s"[solution] $s")
+    case TermAbbBind(_, Some(ty)) =>
+      Context.runE(Representation.typeToString(ty, buildContext = true))
+    case _ => b.toString.pure
+  }
 
   def typeToString(
       t: Type,
@@ -42,7 +51,8 @@ object Representation {
             .indexToName(ctx, idx)
             .toRight("Repr: Type variable not found.")
         })
-      case TypeId(_, id) => id.pure[StateEither]
+      case TypeEVar(_, n) => "{unknown}".pure[StateEither]
+      case TypeId(_, id)  => id.pure[StateEither]
       case TypeAbs(_, typeVar, ty) =>
         for {
           _ <- addNameToContext(typeVar, buildContext)
