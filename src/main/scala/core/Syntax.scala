@@ -7,25 +7,69 @@ object Types {
   case object KindStar extends Kind
   case class KindArrow(k1: Kind, k2: Kind) extends Kind
 
-  sealed trait Type
+  sealed abstract trait Type {
+    def isMono: Boolean = true
 
-  case class TypeVar(info: Info, index: Integer, length: Integer) extends Type
-  case class TypeId(info: Info, i: String) extends Type
-  case class TypeArrow(info: Info, t1: Type, t2: Type) extends Type
-  case class TypeUnit(info: Info) extends Type
-  case class TypeRecord(info: Info, f: List[(String, Type)]) extends Type
-  case class TypeVariant(info: Info, v: List[(String, Type)]) extends Type
-  case class TypeRec(info: Info, v: String, k: Kind, t: Type) extends Type
-  case class TypeAll(info: Info, i: String, k: Kind, t: Type) extends Type
-  case class TypeAbs(info: Info, i: String, t: Type) extends Type
-  case class TypeApp(info: Info, t1: Type, t2: Type) extends Type
-  case class TypeBool(info: Info) extends Type
-  case class TypeString(info: Info) extends Type
-  case class TypeFloat(info: Info) extends Type
-  case class TypeInt(info: Info) extends Type
+    /** Returns whether `eV` is in the free variables of this type. */
+    def containsEVar(eV: TypeEVar): Boolean
+  }
+
+  case class TypeVar(info: Info, index: Integer, length: Integer) extends Type {
+    def containsEVar(eV: TypeEVar): Boolean = false
+  }
+  case class TypeEVar(info: Info, name: String) extends Type {
+    def containsEVar(eV: TypeEVar): Boolean = this.name == eV.name
+  }
+  case class TypeId(info: Info, i: String) extends Type {
+    def containsEVar(eV: TypeEVar): Boolean = false
+  }
+  case class TypeArrow(info: Info, t1: Type, t2: Type) extends Type {
+    override def isMono: Boolean = t1.isMono && t2.isMono
+    def containsEVar(eV: TypeEVar): Boolean =
+      t1.containsEVar(eV) || t2.containsEVar(eV)
+  }
+  case class TypeUnit(info: Info) extends Type {
+    def containsEVar(eV: TypeEVar): Boolean = false
+  }
+  case class TypeRecord(info: Info, f: List[(String, Type)]) extends Type {
+    def containsEVar(eV: TypeEVar): Boolean =
+      f.unzip._2.exists(_.containsEVar(eV))
+  }
+  case class TypeVariant(info: Info, v: List[(String, Type)]) extends Type {
+    def containsEVar(eV: TypeEVar): Boolean =
+      v.unzip._2.exists(_.containsEVar(eV))
+  }
+  case class TypeRec(info: Info, v: String, k: Kind, t: Type) extends Type {
+    def containsEVar(eV: TypeEVar): Boolean = t.containsEVar(eV)
+  }
+  case class TypeAll(info: Info, i: String, k: Kind, t: Type) extends Type {
+    override def isMono: Boolean = false
+    def containsEVar(eV: TypeEVar): Boolean = t.containsEVar(eV)
+  }
+  case class TypeAbs(info: Info, i: String, t: Type) extends Type {
+    override def isMono: Boolean = false
+    def containsEVar(eV: TypeEVar): Boolean = t.containsEVar(eV)
+  }
+  case class TypeApp(info: Info, t1: Type, t2: Type) extends Type {
+    def containsEVar(eV: TypeEVar): Boolean =
+      t1.containsEVar(eV) || t2.containsEVar(eV)
+  }
+  case class TypeBool(info: Info) extends Type {
+    def containsEVar(eV: TypeEVar): Boolean = false
+  }
+  case class TypeString(info: Info) extends Type {
+    def containsEVar(eV: TypeEVar): Boolean = false
+  }
+  case class TypeFloat(info: Info) extends Type {
+    def containsEVar(eV: TypeEVar): Boolean = false
+  }
+  case class TypeInt(info: Info) extends Type {
+    def containsEVar(eV: TypeEVar): Boolean = false
+  }
 
   implicit val showTypeInfo: ShowInfo[Type] = ShowInfo.info(_ match {
     case TypeVar(info, _, _)    => info
+    case TypeEVar(info, _)      => info
     case TypeId(info, _)        => info
     case TypeArrow(info, _, _)  => info
     case TypeUnit(info)         => info
@@ -136,9 +180,16 @@ object Bindings {
 
   case object NameBind extends Binding
   case class TypeVarBind(k: Kind) extends Binding
-  case class VarBind(t: Type) extends Binding
   case class TypeAbbBind(t: Type, k: Option[Kind] = None) extends Binding
   case class TermAbbBind(t: Term, ty: Option[Type] = None) extends Binding
+
+  // contexts (Γ,∆,Θ): · | Γ,α | Γ,x:A | Γ,â | Γ,â = τ | Γ,▶â
+  case class VarBind(t: Type) extends Binding
+  sealed trait Mark extends Binding
+  case class TypeESolutionBind(t: Type) extends Mark
+  case object TypeEFreeBind extends Mark
+  case object TypeEMarkBind extends Mark
+
   // Used by code generation phase (grin).
   case object TempVarBind extends Binding
 

@@ -20,13 +20,14 @@ import scala.util.Success
 
 object Compiler {
   def run(
+      command: Command,
       fileName: String,
       origin: InputStream,
       destination: OutputStream
   ): IO[Option[String]] =
     for {
       code <- IO.blocking(origin.readAllBytes.map(_.toChar).mkString)
-      result = compile(code, fileName)
+      result = compile(command, code, fileName)
       value <- result match {
         case Right(compiledCode) =>
           IO.blocking(destination.write(compiledCode.getBytes)).map(_ => None)
@@ -34,7 +35,11 @@ object Compiler {
       }
     } yield value
 
-  def compile(code: String, fileName: String): Either[Error, String] = for {
+  def compile(
+      command: Command,
+      code: String,
+      fileName: String
+  ): Either[Error, String] = for {
     v <- parse(code, fileName)
     c1 = BuiltIn.Functions.map(b => (b.i, NameBind))
     // NOTE: The built-in functions are reversed in order to initialize the
@@ -42,8 +47,12 @@ object Compiler {
     d <- Desugar.run(v.toList, (c1.reverse, 0))
     b2 = BuiltIn.Functions ++ d
     bindings <- TypeChecker.run(b2)
-    grinCode <- Right(Grin.generate(bindings))
-  } yield grinCode
+    code <- command match {
+      case BuildFile(_) => Right(Grin.generate(bindings))
+      case CheckFile(_) =>
+        Representation.typeRepresentation(bindings).map(_.mkString("\n"))
+    }
+  } yield code
 
   def parse(code: String, fileName: String): Either[Error, Seq[FDecl]] = {
     val parser = new FuseParser(code, fileName)

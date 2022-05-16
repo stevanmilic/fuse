@@ -101,7 +101,7 @@ object GrinUtils {
     State.inspect { ctx => Context.indexToName(ctx, idx).get }
 
   def typeCheck(term: Term): ContextState[Type] =
-    toContextState(TypeChecker.pureTypeOf(term))
+    toContextState(TypeChecker.pureInfer(term))
 
   def toContextState[T](stateEither: StateEither[T]): ContextState[T] =
     stateEither.value.map(v =>

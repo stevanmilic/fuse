@@ -2,10 +2,6 @@
 #include <stdlib.h>
 #include <inttypes.h>
 
-/*
-TODO: Add statistics.
-*/
-
 extern int64_t _heap_ptr_;
 int64_t grinMain();
 

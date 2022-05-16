@@ -165,7 +165,9 @@ abstract class Expressions(fileName: String) extends Types(fileName) {
     info ~ `let` ~ identifier ~ (`:` ~ `Type`).? ~ `=` ~ InlineExpr ~> FLetExpr.apply
   }
   def LambdaExpr = {
-    def Binding = rule { info ~ identifier ~ (`:` ~ `Type`).? ~> FBinding.apply }
+    def Binding = rule {
+      info ~ identifier ~ (`:` ~ `Type`).? ~> FBinding.apply
+    }
     def Bindings = rule { '(' ~ Binding.*(",") ~ ')' }
     def ReturnType = rule { `->` ~ Type }
     rule {

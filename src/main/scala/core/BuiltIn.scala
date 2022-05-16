@@ -64,7 +64,7 @@ object BuiltIn {
           TypeArrow(
             UnknownInfo,
             TypeString(UnknownInfo),
-            TypeUnit(UnknownInfo),
+            TypeUnit(UnknownInfo)
           )
         )
       )
@@ -76,7 +76,7 @@ object BuiltIn {
           TypeArrow(
             UnknownInfo,
             TypeInt(UnknownInfo),
-            TypeString(UnknownInfo),
+            TypeString(UnknownInfo)
           )
         )
       )

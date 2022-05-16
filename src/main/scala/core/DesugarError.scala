@@ -7,7 +7,6 @@ import core.Context.*
 import fuse.Utils.consoleError
 import parser.Info.*
 
-
 sealed trait DesugarError
 
 case class TypeNotSupportedDesugarError(info: Info) extends DesugarError
@@ -36,9 +35,12 @@ object DesugarError {
       case DeclarationNotSupportedDesugarError(info) =>
         consoleError("declaration not supported", info)
       case VariableNotFoundDesugarError(info, variable) =>
-        consoleError(s"cannot find variable `$variable` in this scope", info)
+        consoleError(s"cannot find symbol `$variable` in this scope", info)
       case TypeVariableNotFoundDesugarError(info, variable) =>
-        consoleError(s"cannot find type variable `$variable` in this scope", info)
+        consoleError(
+          s"cannot find type variable `$variable` in this scope",
+          info
+        )
       case FunctionOperatorNotFoundDesugarError(info, func) =>
         consoleError(s"function operator `$func` not found", info)
       case CaseNotSupportedDesugarError(info) =>
