@@ -12,7 +12,7 @@ impl List[A]:
         foldRight(this, Nil[B](), (h, t) => Cons(f(h), t))
 
     fun map_2[B](f: A -> B) -> List[B]
-        let iter = (acc: List[B], l: List[A]) => {
+        let iter = (acc, l) => {
             match l:
                 Cons(h, t) => Cons(f(h), iter(acc, t))
                 Nil => acc

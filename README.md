@@ -2,24 +2,25 @@
 
 # Features
 
-* Algebraic Data Types (ADT)
-* Generics (Parametric Polymorphism)
-* Type Methods
-* Pattern Matching
+- Algebraic Data Types (ADT)
+- Generics (Parametric Polymorphism)
+- Type Methods
+- Pattern Matching
 
 # Road-map
 
 - [x] Fuse Parser
 - [x] Type Checker for System F with ADT and Pattern Matching
 - [x] Improve Type Error Messages
-- [ ] Code Generation to LLVM
-- [ ] Implement Type Inference for higher order types (HM or Bidirectional)
+- [x] Code Generation to LLVM (without generics)
+- [x] Implement Type Inference for higher order types (HM or Bidirectional)
+- [ ] Code Generation to LLVM with monomorphisation
 - [ ] Add modules & imports
 - [ ] Implement Type Classes
 
 # Example with [Tree-Sitter](https://github.com/stevanmilic/tree-sitter-fuse)
 
-![fuse](https://user-images.githubusercontent.com/6879030/126560462-08a46755-9162-4ba3-900c-f5421cff1e4c.png)
+![fuse](https://user-images.githubusercontent.com/6879030/200401120-d3c9d833-5a8b-4e3e-a8ca-f6ef7834bdd2.png)
 
 # ADTs (Algebraic Data Types)
 
