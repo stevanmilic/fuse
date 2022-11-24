@@ -16,10 +16,10 @@ abstract class Keywords extends Parser {
   def `true` = Key("true")
   def `trait` = Key("trait")
   def `false` = Key("false")
-  def `for` = Key("for")
   def `if` = Key("false")
   def `Unit` = Key("Unit")
 
+  def `for` = symbol("for")
   def `:` = symbol(':')
   def `=` = symbol('=')
   def `=>` = symbol("=>")

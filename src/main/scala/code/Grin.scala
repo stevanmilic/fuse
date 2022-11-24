@@ -19,6 +19,7 @@ object Grin {
   val MainFunction = "grinMain"
   val PartialFunSuffix = "''"
 
+  // Move the Grin AST into a separate object.
   sealed trait Expr
 
   case class Value(e: String) extends Expr

@@ -41,11 +41,11 @@ object Compiler {
       fileName: String
   ): Either[Error, String] = for {
     v <- parse(code, fileName)
-    c1 = BuiltIn.Functions.map(b => (b.i, NameBind))
+    c1 = BuiltIn.Binds.map(b => (b.i, NameBind))
     // NOTE: The built-in functions are reversed in order to initialize the
     // context in the correct order.
     d <- Desugar.run(v.toList, (c1.reverse, 0))
-    b2 = BuiltIn.Functions ++ d
+    b2 = BuiltIn.Binds ++ d
     bindings <- TypeChecker.run(b2)
     code <- command match {
       case BuildFile(_) => Right(Grin.generate(bindings))

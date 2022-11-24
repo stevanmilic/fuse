@@ -21,6 +21,16 @@ object Desugar {
   val RecursiveFunctionParamPrefix = "^"
   val MethodNamePrefix = "!"
   val RecordConstrPrefix = "%"
+  val SelfTypeName = "Self"
+  val ThisIdentifier = "this"
+
+  // Patterns
+  val AlphaNum = "[a-zA-Z0-9]+";
+  val TypeInstanceMethodPattern =
+    s"$MethodNamePrefix($AlphaNum)#($AlphaNum)#($AlphaNum)".r
+  val TypeInstancePattern =
+    s"#($AlphaNum)#($AlphaNum)".r
+  val MethodPattern = s"$MethodNamePrefix($AlphaNum)#($AlphaNum)".r
 
   def run(
       decls: List[FDecl],
@@ -86,7 +96,7 @@ object Desugar {
     case FTypeFuncDecls(info, typeIdentifier, typeParams, functions) =>
       val param = FParam(
         info,
-        FIdentifier("this"),
+        FIdentifier(ThisIdentifier),
         FSimpleType(
           info,
           typeIdentifier,
@@ -108,6 +118,100 @@ object Desugar {
       functions.toList
         .traverse(f => bind(FFuncDecl(modifySignature(f.sig), f.exprs)))
         .map(_.flatten)
+    case FTraitDecl(info, traitIdentifier, typeParams, functions) =>
+      // NOTE: Add a type paramater that has a type bound for the trait.
+      val selfTypeParam = FTypeParam(
+        info,
+        FIdentifier(SelfTypeName),
+        Some(Seq(FSimpleType(info, traitIdentifier))) // type class constraint
+      )
+      // NOTE: The difference between type parameters and arguments (value params).
+      val selfParam = FParam(
+        info,
+        FIdentifier(ThisIdentifier),
+        FSimpleType(
+          info,
+          // NOTE: Here we are using the type param with the trait type bound
+          // we just added.
+          FIdentifier(SelfTypeName),
+          Some(
+            typeParams
+              .getOrElse(Seq())
+              .map(tp => FSimpleType(info, FIdentifier(tp.i.value)))
+          )
+        )
+      )
+      val methodTypeParams =
+        typeParams.map(selfTypeParam +: _).getOrElse(Seq(selfTypeParam))
+      val modifySignature = (sig: FFuncSig) =>
+        FFuncSig(
+          sig.info,
+          FIdentifier(toMethodId(sig.i.value, traitIdentifier.value)),
+          Some(sig.tp.map(methodTypeParams ++ _).getOrElse(methodTypeParams)),
+          Some(sig.p.fold(Seq(selfParam))(selfParam +: _)),
+          sig.r
+        )
+      for {
+        bt <- bindTypeClass(traitIdentifier.value, typeParams)
+        bf <- functions.toList
+          .traverse {
+            case Left(f) => bind(FFuncDecl(modifySignature(f.sig), f.exprs))
+            case Right(s) =>
+              val ms = modifySignature(s)
+              for {
+                m <- Context.runE(toClassMethod(ms, typeParams))
+                ta <- bindTermAbb(ms.i.value, m)
+              } yield List(ta)
+          }
+          .map(_.flatten)
+      } yield bt +: bf
+    case FTraitInstance(
+          info,
+          traitIdentifier,
+          _,
+          typeIdentifier,
+          typeParams,
+          methods
+        ) =>
+      val param = FParam(
+        info,
+        FIdentifier(ThisIdentifier),
+        FSimpleType(
+          info,
+          typeIdentifier,
+          Some(
+            typeParams
+              .getOrElse(Seq())
+              .map(tp => FSimpleType(info, FIdentifier(tp.i.value)))
+          )
+        )
+      )
+      val modifySignature = (sig: FFuncSig) =>
+        FFuncSig(
+          sig.info,
+          FIdentifier(
+            toTypeInstanceMethodId(
+              sig.i.value,
+              typeIdentifier.value,
+              traitIdentifier.value
+            )
+          ),
+          typeParams.fold(sig.tp)(p => Some(sig.tp.fold(p)(p ++ _))),
+          Some(sig.p.fold(Seq(param))(param +: _)),
+          sig.r
+        )
+      for {
+        ty <- toType(FSimpleType(info, typeIdentifier))
+        typeClassInstanceBind <- bindTypeClassInstance(
+          traitIdentifier.value,
+          typeIdentifier.value,
+          ty,
+          methods.map(_.sig.i.value).toList
+        )
+        methodBinds <- methods.toList
+          .traverse(f => bind(FFuncDecl(modifySignature(f.sig), f.exprs)))
+          .map(_.flatten)
+      } yield typeClassInstanceBind +: methodBinds
     case _ =>
       DesugarError.format(DeclarationNotSupportedDesugarError(d.info))
   }
@@ -118,6 +222,21 @@ object Desugar {
   def bindTermAbb(i: String, t: Term): StateEither[Bind] =
     EitherT.liftF(Context.addName(i).map(Bind(_, TermAbbBind(t))))
 
+  def bindTypeClass(i: String, tp: Option[Seq[FTypeParam]]): StateEither[Bind] =
+    EitherT.liftF(Context.addName(i).map(Bind(_, TypeClassBind(toKind(tp)))))
+
+  def bindTypeClassInstance(
+      typeClass: String,
+      typeName: String,
+      ty: Type,
+      methods: List[String]
+  ): StateEither[Bind] =
+    EitherT.liftF(
+      Context
+        .addName(s"#${typeClass}#${typeName}")
+        .map(Bind(_, TypeClassInstanceBind(typeClass, ty, methods)))
+    )
+
   // # Bind # region_end
 
   // # Term # region_start
@@ -127,7 +246,7 @@ object Desugar {
       sig: FFuncSig,
       exprs: Seq[FExpr]
   ): StateEither[Term] = for {
-    t <- EitherT.liftF(withTermTypeAbs(sig.info, tp))
+    t <- withTermTypeAbs(sig.info, tp)
     abs <- withFuncAbs(sig, toTermExpr(exprs.toList))
   } yield t(abs)
 
@@ -260,7 +379,7 @@ object Desugar {
         toTermOperator("&multiply", i1, i2)
       // TODO: Add other operators.
       case FAddition(i1, i2) =>
-        toTermOperator("&add", i1, i2)
+        toTermOperator("+", i1, i2)
       case FSubtraction(i1, i2) =>
         toTermOperator("&sub", i1, i2)
       case FEquality(i1, i2) =>
@@ -406,6 +525,35 @@ object Desugar {
     case _ => DesugarError.format(CaseNotSupportedDesugarError(p.info))
   }
 
+  def toClassMethod(
+      sig: FFuncSig,
+      traitTypeParams: Option[Seq[FTypeParam]]
+  ): StateEither[Term] = for {
+    typeParams <- sig.tp.getOrElse(Seq()).traverse { v =>
+      for {
+        id <- EitherT.liftF(Context.addName(v.i.value))
+        cls <- v.bounds
+          .getOrElse(Seq())
+          .traverse(toTypeClass(_))
+          .map(_.toList)
+      } yield (v.info, id, cls)
+    }
+    _ <- EitherT.liftF(
+      sig.tp.getOrElse(Seq()).traverse(p => Context.addName(p.i.value))
+    )
+    paramTypes = sig.p.map(_.map(_.t)).getOrElse(Seq())
+    funcType <- toType(FFuncType(sig.info, paramTypes, sig.r))
+    methodType = typeParams.foldRight(funcType)((p, acc) =>
+      // NOTE: In case of Self type parameter we gotta compute its kind
+      // based on the type parameters provided for the trait.
+      val kind = p._2 match {
+        case SelfTypeName => toKind(traitTypeParams)
+        case _            => KindStar
+      }
+      TypeAll(p._1, p._2, kind, p._3, acc)
+    )
+  } yield TermClassMethod(sig.info, methodType)
+
   def toTermVar(info: Info, i: String): ContextState[Option[Term]] =
     State { ctx =>
       Context
@@ -466,11 +614,8 @@ object Desugar {
       typ: StateEither[Type]
   ): StateEither[Type] = for {
     ri <- EitherT.liftF(Context.addName(toRecId(i)))
-    knd = List
-      .fill(tp.map(_.length).getOrElse(0) + 1)(KindStar: Kind)
-      .reduceRight(KindArrow(_, _))
     t <- typ
-  } yield TypeRec(info, ri, knd, t)
+  } yield TypeRec(info, ri, toKind(tp), t)
 
   // # Type # region_end
 
@@ -484,7 +629,7 @@ object Desugar {
   ): StateEither[Term] = v match {
     case FVariantTypeValue(info, FIdentifier(i), None) =>
       for {
-        g <- EitherT.liftF(withTermTypeAbs(info, tp))
+        g <- withTermTypeAbs(info, tp)
         tag = toTermTag(
           info,
           variantName,
@@ -496,7 +641,7 @@ object Desugar {
       } yield g(fold)
     case FVariantTypeValue(info, FIdentifier(i), Some(fields)) =>
       for {
-        g <- EitherT.liftF(withTermTypeAbs(info, tp))
+        g <- withTermTypeAbs(info, tp)
         values = toRecordValues(fields)
         r = EitherT.liftF[ContextState, Error, Term](toTermRecord(info, values))
         tag = toTermTag(info, variantName, tp, i, r)
@@ -511,7 +656,7 @@ object Desugar {
       tp: FTypeParamClause,
       fields: Either[FParams, FTypes]
   ): StateEither[Term] = for {
-    g <- EitherT.liftF(withTermTypeAbs(info, tp))
+    g <- withTermTypeAbs(info, tp)
     values = toRecordValues(fields)
     r = EitherT.liftF[ContextState, Error, Term](toTermRecord(info, values))
     fold = withFold(info, recordName, tp, r)
@@ -549,14 +694,22 @@ object Desugar {
   def withTermTypeAbs(
       info: Info,
       typ: FTypeParamClause
-  ): ContextState[Term => Term] =
+  ): StateEither[Term => Term] =
     typ match {
       case Some(p) =>
-        val ids = p.map(_.i.value).toList
-        for {
-          _ <- ids.traverse(Context.addName(_))
-        } yield t => ids.foldRight(t)((i, acc) => TermTAbs(info, i, acc))
-      case None => State.pure(identity)
+        p.traverse { v =>
+          for {
+            id <- EitherT.liftF(Context.addName(v.i.value))
+            cls <- v.bounds
+              .getOrElse(Seq())
+              .traverse(toTypeClass(_))
+              .map(_.toList)
+          } yield (id, cls)
+        }.map(values =>
+          (t: Term) =>
+            values.foldRight(t)((i, acc) => TermTAbs(info, i._1, i._2, acc))
+        )
+      case None => EitherT.pure(identity)
     }
 
   def withRecordAbs(
@@ -617,7 +770,17 @@ object Desugar {
   // checking when the projection is found for a variable. There's also a "#"
   // separator that depicts the type name for the method.
   def toMethodId(methodName: String, typeName: String) =
-    s"$MethodNamePrefix${methodName}#${typeName}"
+    s"$MethodNamePrefix$methodName#$typeName"
+
+  // The method type has a prefix "!" that should be searched during type
+  // checking when the projection is found for a variable. There's also a "#"
+  // separator that depicts the type name and the type class for the method.
+  def toTypeInstanceMethodId(
+      methodName: String,
+      typeName: String,
+      typeClass: String
+  ) =
+    s"$MethodNamePrefix$methodName#$typeName#$typeClass"
 
   // # Constructors # region_end
 
@@ -664,6 +827,16 @@ object Desugar {
       case _ => DesugarError.format(TypeVariableNotFoundDesugarError(info, i))
     }
   } yield typeVar
+
+  def toTypeClass(t: FType): StateEither[TypeClass] = t match {
+    case FSimpleType(info, FIdentifier(i), None) => TypeClass(info, i).pure
+    case _ => DesugarError.format(TypeBoundNotSupportedDesugarError(t.info))
+  }
+
+  def toKind(tp: Option[Seq[FTypeParam]]) =
+    List
+      .fill(tp.map(_.length).getOrElse(0) + 1)(KindStar: Kind)
+      .reduceRight(KindArrow(_, _))
 
   def toCtxIndex(ctx: Context, i: String): Option[Int] =
     Context.nameToIndex(ctx, i).orElse(Context.nameToIndex(ctx, toRecId(i)))

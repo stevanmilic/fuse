@@ -8,6 +8,7 @@ target/
 .bloop/
 .metals/
 project/metals.sbt
+.output/
 
 .git/
 *.out

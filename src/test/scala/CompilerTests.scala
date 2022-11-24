@@ -13,6 +13,21 @@ fun main() -> i32
     2 + 2
         """)
   }
+  test("check integer addition of multiple values") {
+    fuse("""
+fun main() -> i32
+    2 + 2 + 5 + 7
+        """)
+  }
+  test("check integer and string addition") {
+    fuse(
+      """
+fun main() -> i32
+    2 + "2"
+        """,
+      Some("expected type of `i32`, found `str`")
+    )
+  }
   test("check float addition") {
     fuse("""
 fun main() -> f32
@@ -25,6 +40,20 @@ fun main() -> i32
     let s = "1" + "2"
     0
         """)
+  }
+  test("check invalid record type addition") {
+    fuse(
+      """
+type Point:
+  x: i32
+  y: i32
+
+fun main() -> i32
+    let s = Point(0, 0) + Point(1, 1)
+    0
+        """,
+      Some("expected one of types `{str, f32, i32}`, found `Point`")
+    )
   }
   test("check generic option") {
     fuse("""
@@ -71,6 +100,8 @@ fun option_str(v: i32) -> Option[str]
     s.map(a => int_to_str(a))
 
 fun main() -> i32
+    let o = Some(5)
+    let o1 = o.flat_map(t => Some(t + 1))
     let l = option_str(5)
     match l:
         Some(v) => 0
@@ -187,6 +218,59 @@ fun main() -> i32
     value(Dog)
         """)
   }
+  test("check function on record with primitive types") {
+    fuse("""
+type StateInt:
+  run: i32 -> i32
+
+fun value(a: StateInt) -> i32
+  a.run(2)
+  
+fun main() -> i32
+  value(StateInt(a => a + 1))
+        """)
+  }
+  test("check function on record with sum type") {
+    fuse("""
+type Option[A]:
+    None
+    Some(A)
+
+impl Option[A]:
+    fun is_some() -> bool
+        match this:
+            Some(v) => true
+            _ => false
+
+type StateInt:
+  run: i32 -> Option[i32]
+
+fun value(a: StateInt) -> bool
+  let o = a.run(2)
+  o.is_some()
+  
+fun main() -> i32
+  let s = StateInt(a => Some(a))
+  match value(s):
+    true => 1
+    false => 0
+        """)
+  }
+  test("check function on record with tuple type") {
+    fuse("""
+type Tuple[A, B](A, B)
+
+type State[S, A]:
+  run: S -> Tuple[A, S]
+
+fun value(a: State[i32, i32]) -> i32
+  let t = a.run(1)
+  t.1 + t.2
+  
+fun main() -> i32
+  value(State(a => Tuple(a + 1, a + 2)))
+        """)
+  }
   test("check inline lambda type inference") {
     fuse("""
 fun main() -> i32
@@ -198,6 +282,13 @@ fun main() -> i32
     fuse("""
 fun main() -> i32
     let value = (a, b) => a + b + 2
+    value(1, 2)
+        """)
+  }
+  test("check inline lambda type inference with two variables #2") {
+    fuse("""
+fun main() -> i32
+    let value = (a, b) => a + 2 + b
     value(1, 2)
         """)
   }
@@ -216,6 +307,48 @@ fun main() -> i32
     value("2")
         """,
       Some("expected type of `i32`, found `str`")
+    )
+  }
+  test("check inline lambda type inference with two variables invalid param") {
+    fuse(
+      """
+fun main() -> i32
+    let value = (a, b) => a + b + 2
+    value("1", 2)
+        """,
+      Some("expected type of `i32`, found `str`")
+    )
+  }
+  test("check inline lambda type inference with invalid record type addition") {
+    fuse(
+      """
+type Point:
+  x: i32
+  y: i32
+
+fun main() -> i32
+    let value = (a) => Point(2, 3) + a
+    value(Point(1, 2))
+    0
+        """,
+      Some("expected one of types `{str, f32, i32}`, found `Point`")
+    )
+  }
+  test(
+    "check inline lambda type inference with invalid record type addition #2"
+  ) {
+    fuse(
+      """
+type Point:
+  x: i32
+  y: i32
+
+fun main() -> i32
+    let value = (a) => a + Point(2, 3) 
+    value(Point(1, 2))
+    0
+        """,
+      Some("expected one of types `{str, f32, i32}`, found `Point`")
     )
   }
   test("check closure inference with match statement for primitive type") {
@@ -456,6 +589,440 @@ fun main() -> i32
         "expected type of `Either[str][str]`"
       )
     )
+  }
+  test("check simple trait") {
+    fuse("""
+trait Summary:
+  fun summarize() -> str;
+
+type Tweet:
+  username: str
+  content: str
+
+impl Summary for Tweet:
+  fun summarize() -> str
+    this.username + ": " + this.content
+
+fun notify[T: Summary](s: T) -> Unit
+  print("Breaking news! " + s.summarize())
+
+fun main() -> i32
+    let tweet = Tweet("elon", "work!")
+    print(tweet.summarize())
+    notify(tweet)
+    0
+        """)
+
+  }
+  test("check addition type bounds") {
+    fuse("""
+fun add[T: Add](a: T, b: T) -> T
+  a + b
+
+fun main() -> i32
+  add(2, 3)
+        """)
+
+  }
+  test("check invalid addition type bounds") {
+    fuse(
+      """
+fun add[T: Add](a: T, b: T) -> T
+  a + b
+
+fun main() -> i32
+  add(true, 3)
+        """,
+      Some("expected one of types `{str, f32, i32}`, found `bool` type")
+    )
+
+  }
+  test("check invalid type bound for a trait method") {
+    fuse(
+      """
+trait Summary:
+  fun summarize() -> str;
+
+fun notify[T: Add](s: T) -> Unit
+  print("Breaking news! " + s.summarize())
+
+fun main() -> i32
+    0
+        """,
+      Some("`summarize` method not found in `Add` type")
+    )
+
+  }
+  test("check invalid type bound for a trait method with type instance") {
+    fuse(
+      """
+trait Summary:
+  fun summarize() -> str;
+
+type Tweet:
+  username: str
+  content: str
+
+impl Summary for Tweet:
+  fun summarize() -> str
+    this.username + ": " + this.content
+
+fun notify[T: Summary](s: T) -> Unit
+  print("Breaking news! " + s.summarize())
+
+fun main() -> i32
+    notify(5)
+    0
+        """,
+      Some("expected one of types `{Tweet}`, found `i32` type")
+    )
+
+  }
+  test("check invalid type b i32) ounds for a type param") {
+    fuse(
+      """
+trait Summary:
+  fun summarize() -> str;
+
+trait Collection:
+  fun summarize() -> str;
+
+fun notify[T: Summary + Collection](s: T) -> Unit
+  print("Breaking news! " + s.summarize())
+
+fun main() -> i32
+    0
+        """,
+      Some(
+        "multiple `summarize` method implementations found for `{Summary, Collection}` bounds"
+      )
+    )
+
+  }
+  test("check invalid type for function with type bounds") {
+    fuse(
+      """
+trait Summary:
+  fun summarize() -> str;
+
+type Tweet:
+  username: str
+  content: str
+
+fun notify[T: Summary](s: T) -> Unit
+  print("Breaking news! " + s.summarize())
+
+fun main() -> i32
+    let tweet = Tweet("elon", "work!")
+    notify(tweet)
+    0
+        """,
+      Some(
+        "expected type that implements `{Summary}` traits, found `Tweet` type"
+      )
+    )
+
+  }
+  test("check invalid type method for a trait impl") {
+    fuse(
+      """
+trait Summary:
+  fun summarize() -> str;
+
+type Tweet:
+  username: str
+  content: str
+
+impl Summary for Tweet:
+  fun summarize() -> i32
+    3
+
+fun main() -> i32
+    0
+        """,
+      Some(", found `Tweet -> i32` for `summarize`")
+    )
+
+  }
+  test("check wrong type method for a trait impl") {
+    fuse(
+      """
+trait Summary:
+  fun summarize() -> str;
+
+type Tweet:
+  username: str
+  content: str
+
+impl Summary for Tweet:
+  fun make() -> str
+    this.username + this.content
+
+  fun summarize() -> str
+    this.username + ": " + this.content
+
+fun main() -> i32
+    0
+        """,
+      Some("`make` method not found in `Summary` type")
+    )
+
+  }
+  test("check missing type method for a trait impl") {
+    fuse(
+      """
+trait Summary:
+  fun summarize() -> str;
+  fun title() -> str;
+
+type Tweet:
+  username: str
+  content: str
+
+impl Summary for Tweet:
+  fun summarize() -> str
+    this.username + ": " + this.content
+
+fun main() -> i32
+    0
+        """,
+      Some("`{title}` methods not implemented for `Tweet` type")
+    )
+
+  }
+  test("check generic trait functor implementation") {
+    fuse("""
+trait Functor[A]:
+  fun map[B](f: A -> B) -> Self[B];
+  # This how the desugared type should look like.
+  # fun map[Self: Functor, A, B](this: Self[B], f: A -> B) -> Self[B];
+
+type Option[T]:
+  Some(T)
+  None
+
+impl Functor for Option[A]:
+  fun map[B](f: A -> B) -> Option[B]
+    match this:
+      Some(v) => Some(f(v))
+      _ => None
+
+fun main() -> i32
+    let o = Some(5)
+    o.map(a => a + 1)
+    0
+        """)
+
+  }
+  test("check generic trait monad implementation") {
+    fuse("""
+trait Monad[A]:
+  fun unit(a: A) -> Self[A];
+  fun flat_map[B](f: A -> Self[B]) -> Self[B];
+
+type Option[T]:
+  Some(T)
+  None
+
+impl Monad for Option[A]:
+  fun unit(a: A) -> Option[A]
+    Some(a)
+
+  fun flat_map[B](f: A -> Option[B]) -> Option[B]
+    match this:
+      Some(v) => f(v)
+      _ => None
+
+fun main() -> i32
+    let o = Some(5)
+    o.flat_map(t => Some(t + 1))
+    0
+        """)
+
+  }
+  test("check generic trait functor implementation wrong method type") {
+    fuse(
+      """
+trait Functor[A]:
+  fun map[B](f: A -> B) -> Self[B];
+  # This how the desugared type should look like.
+  # fun map[Self: Functor, A, B](this: Self[B], f: A -> B) -> Self[B];
+
+type Option[T]:
+  Some(T)
+  None
+
+impl Functor for Option[A]:
+  fun map[B](f: A -> B) -> Option[A]
+    match this:
+      Some(v) => Some(v)
+      _ => None
+
+fun main() -> i32
+    let o = Some(5)
+    o.map(a => a + 1)
+    0
+        """,
+      Some(
+        "expected `[Self::* -> *]: Functor, [A::*], [B::*] => Self[A] -> A -> B -> Self[B]`, found `[A::*], [B::*] => Option[A] -> A -> B -> Option[A]` for `map`"
+      )
+    )
+
+  }
+  test("check generic trait monad with default implementation") {
+    fuse("""
+trait Monad[A]:
+  fun unit[B](a: B) -> Self[B];
+
+  fun flat_map[B](f: A -> Self[B]) -> Self[B];
+
+  fun map[B](f: A -> B) -> Self[B]
+    let f = a => this.unit(f(a))
+    this.flat_map(f)
+    # TODO: This inline closure doesn't type check correctly :/
+    # this.flat_map(a => this.unit(f(a)))
+
+type Option[T]:
+  Some(T)
+  None
+
+impl Monad for Option[A]:
+  fun unit(a: A) -> Option[A]
+    Some(a)
+
+  fun flat_map[B](f: A -> Option[B]) -> Option[B]
+    match this:
+      Some(v) => f(v)
+      _ => None
+
+fun main() -> i32
+    let o = Some(5)
+    o.map(a => a + 1)
+    0
+        """)
+
+  }
+  test("check generic trait monad for state") {
+    fuse("""
+trait Monad[A]:
+  fun unit[B](a: B) -> Self[B];
+  fun flat_map[B](f: A -> Self[B]) -> Self[B];
+
+type Tuple[A, B](A, B)
+
+type State[S, A]:
+  run: S -> Tuple[A, S]
+
+impl Monad for State[S, A]:
+  fun unit(a: A) -> State[S, A]
+    let f = (s: S) => Tuple(a, s) 
+    State(f)
+
+  fun flat_map[B](f: A -> State[S, B]) -> State[S, B]
+    let r = s => {
+      let v = this.run(s)
+      f(v.1).run(v.2)
+    }
+    State(r)
+
+fun main() -> i32
+    0
+        """)
+
+  }
+  test("check generic traits monad + show with default implementation") {
+    fuse("""
+trait Monad[A]:
+  fun unit[B](a: B) -> Self[B];
+
+  fun flat_map[B](f: A -> Self[B]) -> Self[B];
+
+  fun map[B](f: A -> B) -> Self[B]
+    let f = a => this.unit(f(a))
+    this.flat_map(f)
+
+trait Show[A]:
+  fun show() -> str;
+
+type Option[T]:
+  Some(T)
+  None
+
+impl Monad for Option[A]:
+  fun unit(a: A) -> Option[A]
+    Some(a)
+
+  fun flat_map[B](f: A -> Option[B]) -> Option[B]
+    match this:
+      Some(v) => f(v)
+      _ => None
+
+impl Show for Option[A]:
+  fun show() -> str
+    "Option[T]"
+
+fun main() -> i32
+    let o = Some(5)
+    o.map(a => a + 1)
+    0
+        """)
+
+  }
+  test("check invalid type classes used for type param for different kinds") {
+    fuse(
+      """
+trait Summary:
+  fun summarize() -> str;
+
+trait Show[A]:
+  fun show() -> str;
+
+fun to_str[T: Summary + Show](s: T) -> str
+  s.show()
+
+fun main() -> i32
+    0
+        """,
+      Some("`{Summary, Show}` type classes have different kinds")
+    )
+
+  }
+  test("check invalid type classes used for type param for same methods") {
+    fuse(
+      """
+trait Summary:
+  fun summarize() -> str;
+
+trait ShortSummary:
+  fun summarize() -> str;
+
+fun to_str[T: Summary + ShortSummary](s: T) -> str
+  s.summarize()
+
+fun main() -> i32
+    0
+        """,
+      Some(
+        "multiple `summarize` method implementations found for `{Summary, ShortSummary}` bounds"
+      )
+    )
+
+  }
+  test("check invalid type class used for type param when doesn't exist") {
+    fuse(
+      """
+trait Summary:
+  fun summarize() -> str;
+
+fun to_str[T: Show](s: T) -> str
+  s.summarize()
+
+fun main() -> i32
+    0
+        """,
+      Some("`Show` type class not found")
+    )
+
   }
 }
 

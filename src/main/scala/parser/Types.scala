@@ -10,7 +10,7 @@ object Types {
   case class FTypeParam(
       info: Info,
       i: FIdentifier,
-      defaultType: Option[FType] = None
+      bounds: Option[Seq[FType]] = Some(List())
   )
   type FTypeParamClause = Option[Seq[FTypeParam]]
 
@@ -43,7 +43,10 @@ abstract class Types(fileName: String) extends Identifiers(fileName) {
 
   // Type Definitions
   def TypeParam = rule {
-    info ~ identifier ~ (`=` ~ Type.named("type")).? ~> FTypeParam.apply
+    info ~ identifier ~ (`:` ~ TypeConstraints).? ~> FTypeParam.apply
+  }
+  def TypeConstraints = rule {
+    Type.+(`+ `)
   }
   def TypeParamClause = rule { '[' ~ TypeParam.+(',') ~ ']' }
 

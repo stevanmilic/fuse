@@ -85,7 +85,7 @@ object GrinUtils {
       case TermProj(_, t, _)       => freeVars(t)
       case TermMethodProj(_, t, _) => freeVars(t)
       case TermAscribe(_, t, _)    => freeVars(t)
-      case TermTAbs(_, _, t)       => freeVars(t)
+      case TermTAbs(_, _, _, t)    => freeVars(t)
       case TermTApp(_, t, _)       => freeVars(t)
       case _                       => State.pure(Nil)
 
@@ -95,7 +95,7 @@ object GrinUtils {
     pickFreshName(name)
 
   def getNameFromType(ty: Type): ContextState[String] =
-    getNameFromIndex(TypeChecker.findRootTypeIndex(ty).get)
+    getNameFromIndex(TypeChecker.findRootTypeVar(ty).get.index)
 
   def getNameFromIndex(idx: Int): ContextState[String] =
     State.inspect { ctx => Context.indexToName(ctx, idx).get }

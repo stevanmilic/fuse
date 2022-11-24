@@ -23,14 +23,14 @@ object Representation {
       .value
 
   def bindingToType(b: Binding): StateEither[String] = b match {
-    case TypeVarBind(k) =>
+    case TypeVarBind(k, _) =>
       Representation.kindToString(k).pure[StateEither]
     case VarBind(ty) =>
       Context.runE(Representation.typeToString(ty, buildContext = true))
     case TypeAbbBind(_, Some(k)) =>
       Representation.kindToString(k).pure[StateEither]
     case TypeEMarkBind => "[mark]".pure
-    case TypeEFreeBind => "[free]".pure
+    case TypeEFreeBind => s"[free]".pure
     case TypeESolutionBind(ty) =>
       Context
         .runE(Representation.typeToString(ty, buildContext = true))
@@ -51,8 +51,15 @@ object Representation {
             .indexToName(ctx, idx)
             .toRight("Repr: Type variable not found.")
         })
-      case TypeEVar(_, n) => "{unknown}".pure[StateEither]
-      case TypeId(_, id)  => id.pure[StateEither]
+      case TypeEVar(_, n, cls) =>
+        val typeBounds = cls match {
+          case Nil => ""
+          case _   => s": ${cls.map(_.name).mkString(" + ")}"
+        }
+        s"{unknown}${typeBounds}".pure
+      case TypeId(_, id)   => id.pure
+      case TypeAny(_)      => "any".pure
+      case TypeClass(_, n) => n.pure
       case TypeAbs(_, typeVar, ty) =>
         for {
           _ <- addNameToContext(typeVar, buildContext)
@@ -63,12 +70,20 @@ object Representation {
           s1 <- typeToString(t1, buildContext)
           s2 <- typeToString(t2, buildContext)
         } yield s"$s1 -> $s2"
-      case TypeAll(_, typeVar, kind, ty) =>
+      case TypeAll(_, typeVar, kind, cls, ty) =>
         for {
           _ <- addNameToContext(typeVar, buildContext)
           k1 <- kindToString(kind).pure[StateEither]
           ty1 <- Context.runE(typeToString(ty, buildContext))
-        } yield s"[$typeVar::$k1] $ty1"
+          typeBounds = cls match {
+            case Nil => ""
+            case _   => s": ${cls.map(_.name).mkString(" + ")}"
+          }
+          sep = ty match {
+            case _: TypeAll => ", "
+            case _          => " => "
+          }
+        } yield s"[$typeVar::$k1]$typeBounds$sep$ty1"
       case TypeApp(_, ty1, ty2) =>
         for {
           ty1s <- typeToString(ty1, buildContext)
@@ -111,6 +126,6 @@ object Representation {
   def kindToString(k: Kind): String = k match {
     case KindStar => "*"
     case KindArrow(k1, k2) =>
-      s"${kindToString(k1)} => ${kindToString(k2)}"
+      s"${kindToString(k1)} -> ${kindToString(k2)}"
   }
 }

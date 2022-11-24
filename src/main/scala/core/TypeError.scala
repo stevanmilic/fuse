@@ -240,6 +240,51 @@ case class MatchNodePatternNotFound(
     code: String = "E0036"
 ) extends TypeError
 
+case class TypeClassInstanceNotFound(
+    info: Info,
+    cls: List[TypeClass],
+    typeClassInstances: List[Type],
+    ty: Type,
+    code: String = "E0037"
+) extends TypeError
+
+case class TypeClassNotFound(
+    info: Info,
+    typeClass: String,
+    code: String = "E0038"
+) extends TypeError
+
+case class MultipleTypeClassMethodsFound(
+    info: Info,
+    typeClass: List[TypeClass],
+    method: String,
+    code: String = "E0039"
+) extends TypeError
+
+case class InvalidTypeInstanceMethod(
+    info: Info,
+    methodType: Type,
+    expectedMethodType: Type,
+    method: String,
+    typeName: String,
+    className: String,
+    code: String = "E0040"
+) extends TypeError
+
+case class MissingTypeInstanceMethods(
+    info: Info,
+    typeName: String,
+    className: String,
+    methods: List[String],
+    code: String = "E0041"
+) extends TypeError
+
+case class KindTypeClassMismatchTypeError(
+    info: Info,
+    typeClass: List[TypeClass],
+    code: String = "E0042"
+) extends TypeError
+
 object TypeError {
   def format[T](error: TypeError): StateEither[T] = {
     val errorMessage = error match {
@@ -325,6 +370,17 @@ object TypeError {
           .map(name =>
             consoleError(
               s"`$method` method not found in `$name` type",
+              info,
+              Some(code)
+            )
+          )
+      case MultipleTypeClassMethodsFound(info, cls, method, code) =>
+        cls
+          .traverse(Representation.typeToString(_))
+          .map(_.mkString(", "))
+          .map(boundTypeClasses =>
+            consoleError(
+              s"multiple `$method` method implementations found for `{$boundTypeClasses}` bounds",
               info,
               Some(code)
             )
@@ -604,6 +660,79 @@ object TypeError {
           info,
           Some(code)
         )
+      case TypeClassInstanceNotFound(
+            info,
+            cls,
+            typeClassInstances,
+            termType,
+            code
+          ) =>
+        for {
+          termTypeName <- Representation.typeToString(termType)
+          expectedTypeInstances <- typeClassInstances.traverse(
+            Representation.typeToString(_)
+          )
+          requiredTypeClasses <- cls.traverse(Representation.typeToString(_))
+          expectedString = expectedTypeInstances match {
+            case Nil =>
+              s"expected type that implements `{${requiredTypeClasses.mkString(", ")}}` traits"
+            case _ =>
+              s"expected one of types `{${expectedTypeInstances.mkString(", ")}}`"
+          }
+        } yield consoleError(
+          s"${expectedString}, found `$termTypeName` type",
+          info,
+          Some(code)
+        )
+      case TypeClassNotFound(info, name, code) =>
+        consoleError(
+          s"`${name}` type class not found",
+          info,
+          Some(code)
+        )
+          .pure[StateEither]
+      case InvalidTypeInstanceMethod(
+            info,
+            methodType,
+            expectedType,
+            method,
+            typeName,
+            className,
+            code
+          ) =>
+        for {
+          termTypeName <- Representation.typeToString(
+            methodType,
+            buildContext = true
+          )
+          expectedTypeName <- Representation.typeToString(
+            expectedType,
+            buildContext = true
+          )
+        } yield consoleError(
+          s"expected `$expectedTypeName`, found `$termTypeName` for `$method`",
+          info,
+          Some(code)
+        )
+      case MissingTypeInstanceMethods(
+            info,
+            typeName,
+            className,
+            methods,
+            code
+          ) =>
+        consoleError(
+          s"`{${methods.mkString(", ")}}` methods not implemented for `$typeName` type",
+          info,
+          Some(code)
+        )
+          .pure[StateEither]
+      case KindTypeClassMismatchTypeError(info, cls, code) =>
+        consoleError(
+          s"`{${cls.map(_.name).mkString(", ")}}` type classes have different kinds",
+          info,
+          Some(code)
+        ).pure[StateEither]
     }
     errorMessage.flatMap(e => EitherT.leftT[ContextState, T](e))
   }

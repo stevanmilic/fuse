@@ -45,7 +45,7 @@ object Context {
     def incrVarBindings(name: String, numOfVarBindings: Int) = b match {
       case _: VarBind if n.startsWith(Desugar.RecursiveFunctionParamPrefix) =>
         (n, numOfVarBindings)
-      case _: VarBind | _: TypeVarBind =>
+      case _: VarBind =>
         (s"$n$numOfVarBindings", numOfVarBindings + 1)
       case _ => (n, numOfVarBindings)
     }
@@ -148,6 +148,11 @@ object Context {
         ty1S <- typeShiftOnContextDiff(ty1)
         ty2S <- typeShiftOnContextDiff(ty2)
       } yield TypeApp(info, ty1S, ty2S)
+    case TypeArrow(info, ty1, ty2) =>
+      for {
+        ty1S <- typeShiftOnContextDiff(ty1)
+        ty2S <- typeShiftOnContextDiff(ty2)
+      } yield TypeArrow(info, ty1S, ty2S)
     case _ => ty.pure
   }
 
@@ -160,20 +165,140 @@ object Context {
     case _ => false
   }
 
+  /** Retrieves types that implement a given type class. */
+  def getClassIntances(cls: TypeClass): ContextState[List[Type]] =
+    State
+      .inspect { (ctx: Context) =>
+        getNotes(ctx).collect {
+          case (_, TypeClassInstanceBind(className, ty, _))
+              if cls.name == className =>
+            ty
+        }.toList
+      }
+      .flatMap(_.traverse(typeShiftOnContextDiff(_)))
+
+  /** Retrieves type classes that implement given type. */
+  def getTypeInstances(t: TypeVar): ContextState[List[TypeClass]] =
+    State.inspect { (ctx: Context) =>
+      getNotes(ctx).foldLeft(List[TypeClass]()) {
+        case (acc, (_, TypeClassInstanceBind(cls, tc: TypeVar, _)))
+            // NOTE: Because the type class instance bind type var isn't
+            // shifted we can instead calculate if its equal to the _current_
+            // type var by including the context length into the calculation
+            // i.e. by taking the difference between the context length and
+            // adding it up to the current index type var (the diff would
+            // usually be negative).
+            if tc.index == (t.index + tc.length - t.length) =>
+          TypeClass(tc.info, cls) :: acc
+        case (acc, _) => acc
+      }
+    }
+
+  def getTypeMethod(
+      info: Info,
+      ty: Type,
+      rootTypeVar: TypeVar,
+      method: String
+  ): StateEither[Type] = for {
+    optionName <- EitherT.liftF(
+      State.inspect { (ctx: Context) =>
+        indexToName(ctx, rootTypeVar.index)
+      }
+    )
+    typeName <- optionName match {
+      case Some(name) => name.pure[StateEither]
+      case None       => TypeError.format(NotFoundTypeError(info))
+    }
+    methodOptionIdx <- EitherT.liftF(
+      State.inspect { (ctx: Context) =>
+        {
+          val methodID = Desugar.toMethodId(method, typeName)
+          val recAbsID = Desugar.toRecAbsId(methodID)
+          getNotes(ctx).indexWhere { case ((i, _)) =>
+            i.startsWith(methodID) || i == recAbsID
+          } match {
+            case v if v >= 0 => Some(v)
+            case _           => None
+          }
+        }
+      }
+    )
+    methodType <- methodOptionIdx match {
+      case Some(idx) => getType(info, idx)
+      case None =>
+        for {
+          cls <- EitherT.liftF(getTypeInstances(rootTypeVar))
+          tys <- cls.traverse(
+            getTypeClassMethodType(_, method)
+              .map(Some(_))
+              .leftFlatMap(_ => EitherT.rightT(None))
+          )
+          methodTypes = tys.collect { case Some(v) => v }
+          ty <- methodTypes match {
+            case h :: Nil => h.pure[StateEither]
+            case Nil =>
+              TypeError.format(
+                MethodNotFoundTypeError(info, ty, method)
+              )
+            case _ =>
+              TypeError.format(MultipleTypeClassMethodsFound(info, cls, method))
+          }
+        } yield ty
+    }
+  } yield methodType
+
+  def getTypeClassMethodType(
+      cls: TypeClass,
+      method: String
+  ): StateEither[Type] = for {
+    methodOptionIdx <- EitherT.liftF(
+      State.inspect { (ctx: Context) =>
+        nameToIndex(ctx, Desugar.toMethodId(method, cls.name))
+      }
+    )
+    methodType <- methodOptionIdx match {
+      case Some(idx) => getType(cls.info, idx)
+      case None =>
+        TypeError.format(
+          MethodNotFoundTypeError(cls.info, cls, method)
+        )
+    }
+  } yield methodType
+
+  def getTypeClassMethods(cls: String): ContextState[List[String]] =
+    State.inspect { (ctx: Context) =>
+      getNotes(ctx).collect {
+        case (
+              Desugar.MethodPattern(method, c),
+              TermAbbBind(_: TermClassMethod, _)
+            ) if cls == c =>
+          method
+      }.toList
+    }
+
   // region: existential variables
 
-  def addEVar(x: String, info: Info, mark: Mark): ContextState[TypeEVar] = for {
+  def addEVar(
+      x: String,
+      info: Info,
+      mark: Mark,
+      cls: List[TypeClass] = List()
+  ): ContextState[TypeEVar] = for {
     freshName <- pickFreshName(x)
     eA <- addBinding(freshName, mark)
-  } yield TypeEVar(info, freshName)
+  } yield TypeEVar(info, freshName, cls)
 
   def addMark(x: String): ContextState[String] = for {
     freshName <- pickFreshName(x)
     m <- addBinding(freshName, TypeEMarkBind)
   } yield m
 
-  def freshEVar(x: String, info: Info): ContextState[TypeEVar] =
-    pickFreshName(x).map(TypeEVar(info, _))
+  def freshEVar(
+      x: String,
+      info: Info,
+      cls: List[TypeClass]
+  ): ContextState[TypeEVar] =
+    pickFreshName(x).map(TypeEVar(info, _, cls))
 
   def containsFreeEVar(eV: TypeEVar): ContextState[Boolean] =
     State.inspect { ctx =>
@@ -183,29 +308,18 @@ object Context {
       }.isDefined
     }
 
-  def solve(eA: TypeEVar, ty: Type): StateEither[Unit] = for {
-    idx <- getFreeEVarIndex(eA)
-    s <- EitherT.liftF(State.modify { (ctx: Context) =>
-      (
-        getNotes(ctx, withMarks = true).toList
-          .updated(idx, (eA.name, TypeESolutionBind(ty))),
-        ctx._2
-      )
-    })
-  } yield s
-
   def insertEArrow(
       eA: TypeEVar
   ): StateEither[Tuple3[TypeEVar, TypeEVar, TypeArrow]] = for {
-    ty1 <- EitherT.liftF(freshEVar("a1", eA.info))
-    ty2 <- EitherT.liftF(freshEVar("a2", eA.info))
+    (idx, cls) <- getFreeEVarIndex(eA)
+    ty1 <- EitherT.liftF(freshEVar("a1", eA.info, cls))
+    ty2 <- EitherT.liftF(freshEVar("a2", eA.info, cls))
     ty = TypeArrow(eA.info, ty1, ty2)
     notes = List(
       (eA.name, TypeESolutionBind(ty)),
       (ty1.name, TypeEFreeBind),
       (ty2.name, TypeEFreeBind)
     )
-    idx <- getFreeEVarIndex(eA)
     s <- EitherT.liftF(State.modify { (ctx: Context) =>
       {
         val (postNotes, preNotes) =
@@ -218,15 +332,15 @@ object Context {
   def insertEApp(
       eA: TypeEVar
   ): StateEither[Tuple3[TypeEVar, TypeEVar, TypeApp]] = for {
-    ty1 <- EitherT.liftF(freshEVar("a1", eA.info))
-    ty2 <- EitherT.liftF(freshEVar("a2", eA.info))
+    (idx, cls) <- getFreeEVarIndex(eA)
+    ty1 <- EitherT.liftF(freshEVar("a1", eA.info, cls))
+    ty2 <- EitherT.liftF(freshEVar("a2", eA.info, cls))
     ty = TypeApp(eA.info, ty1, ty2)
     notes = List(
       (eA.name, TypeESolutionBind(ty)),
       (ty1.name, TypeEFreeBind),
       (ty2.name, TypeEFreeBind)
     )
-    idx <- getFreeEVarIndex(eA)
     s <- EitherT.liftF(State.modify { (ctx: Context) =>
       {
         val (postNotes, preNotes) =
@@ -236,7 +350,21 @@ object Context {
     })
   } yield (ty1, ty2, ty)
 
-  def getFreeEVarIndex(eA: TypeEVar): StateEither[Int] = for {
+  def replaceEVar(
+      idx: Integer,
+      eA: TypeEVar,
+      m: TypeESolutionBind
+  ): ContextState[Unit] =
+    State.modify { (ctx: Context) =>
+      (
+        getNotes(ctx, withMarks = true).toList.updated(idx, (eA.name, m)),
+        ctx._2
+      )
+    }
+
+  def getFreeEVarIndex(
+      eA: TypeEVar
+  ): StateEither[Tuple2[Int, List[TypeClass]]] = for {
     idx <- EitherT.liftF(State.inspect { (ctx: Context) =>
       getNotes(ctx, withMarks = true).indexWhere {
         case (v, TypeEFreeBind) if v == eA.name => true
@@ -250,7 +378,7 @@ object Context {
       case Some(v) => v.pure[StateEither]
       case None    => TypeError.format(ExistentialVariableNotFoundTypeError(eA))
     }
-  } yield r
+  } yield (r, eA.cls)
 
   /** Looks up the solution for `ev` in `ctx`. */
   def solution(
@@ -309,7 +437,7 @@ object Context {
         r1 <- isWellFormed(ty1)
         r2 <- isWellFormed(ty2)
       } yield r1 && r2
-    case TypeAll(_, _, _, ty) => isWellFormed(ty)
+    case TypeAll(_, _, _, _, ty) => isWellFormed(ty)
     case TypeRecord(_, l) =>
       l.traverse { case (_, ty) => isWellFormed(ty) }.map(_.reduce(_ && _))
     case TypeVariant(_, l) =>
@@ -322,7 +450,7 @@ object Context {
       eA: TypeEVar,
       peelToEVar: Type
   ): ContextState[Boolean] = peelToEVar match {
-    case TypeEVar(_, name) =>
+    case TypeEVar(_, name, _) =>
       Context.run {
         for {
           _ <- peel(name, true)

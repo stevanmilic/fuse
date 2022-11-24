@@ -76,11 +76,11 @@ object FuseParser {
 
   case class FTraitInstance(
       info: Info,
-      type_id: FIdentifier,
-      type_tp: FTypeParamClause,
-      trait_id: FIdentifier,
-      trait_tp: FTypeParamClause,
-      f: Seq[FFuncDecl]
+      traitIdentifier: FIdentifier,
+      traitParams: FTypeParamClause,
+      typeIdentifier: FIdentifier,
+      typeParams: FTypeParamClause,
+      methods: Seq[FFuncDecl]
   ) extends FDecl
 
   implicit val showDeclInfo: ShowInfo[FDecl] = ShowInfo.info(_ match {
@@ -176,7 +176,7 @@ class FuseParser(val input: ParserInput, fileName: String)
     val TraitFunc = () =>
       rule { FuncSig ~ ";" ~> (Right(_)) | FuncDecl ~> (Left(_)) }
     rule {
-      `trait` ~ info ~ identifier ~ TypeParamClause.? ~ ":" ~ oneOrMoreWithIndent(
+      `trait` ~ info ~ identifier ~ TypeParamClause.? ~ `:` ~ oneOrMoreWithIndent(
         TraitFunc,
         "function"
       ) ~>

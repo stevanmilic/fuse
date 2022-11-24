@@ -10,6 +10,7 @@ import parser.Info.*
 sealed trait DesugarError
 
 case class TypeNotSupportedDesugarError(info: Info) extends DesugarError
+case class TypeBoundNotSupportedDesugarError(info: Info) extends DesugarError
 case class ExpressionNotSupportedDesugarError(info: Info) extends DesugarError
 case class TypeAnnotationRequiredDesugarError(info: Info) extends DesugarError
 case class DeclarationNotSupportedDesugarError(info: Info) extends DesugarError
@@ -28,6 +29,8 @@ object DesugarError {
     EitherT.leftT(error match {
       case TypeNotSupportedDesugarError(info) =>
         consoleError("type not supported", info)
+      case TypeBoundNotSupportedDesugarError(info) =>
+        consoleError("type bound not supported, use trait name", info)
       case ExpressionNotSupportedDesugarError(info) =>
         consoleError("expression not supported", info)
       case TypeAnnotationRequiredDesugarError(info) =>

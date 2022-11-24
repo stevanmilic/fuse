@@ -17,8 +17,12 @@ object Types {
   case class TypeVar(info: Info, index: Integer, length: Integer) extends Type {
     def containsEVar(eV: TypeEVar): Boolean = false
   }
-  case class TypeEVar(info: Info, name: String) extends Type {
+  case class TypeEVar(info: Info, name: String, cls: List[TypeClass] = List())
+      extends Type {
     def containsEVar(eV: TypeEVar): Boolean = this.name == eV.name
+  }
+  case class TypeClass(info: Info, name: String) extends Type {
+    def containsEVar(eV: TypeEVar): Boolean = false
   }
   case class TypeId(info: Info, i: String) extends Type {
     def containsEVar(eV: TypeEVar): Boolean = false
@@ -42,7 +46,13 @@ object Types {
   case class TypeRec(info: Info, v: String, k: Kind, t: Type) extends Type {
     def containsEVar(eV: TypeEVar): Boolean = t.containsEVar(eV)
   }
-  case class TypeAll(info: Info, i: String, k: Kind, t: Type) extends Type {
+  case class TypeAll(
+      info: Info,
+      i: String,
+      k: Kind,
+      cls: List[TypeClass] = List(),
+      t: Type
+  ) extends Type {
     override def isMono: Boolean = false
     def containsEVar(eV: TypeEVar): Boolean = t.containsEVar(eV)
   }
@@ -66,23 +76,28 @@ object Types {
   case class TypeInt(info: Info) extends Type {
     def containsEVar(eV: TypeEVar): Boolean = false
   }
+  case class TypeAny(info: Info) extends Type {
+    def containsEVar(eV: TypeEVar): Boolean = false
+  }
 
   implicit val showTypeInfo: ShowInfo[Type] = ShowInfo.info(_ match {
-    case TypeVar(info, _, _)    => info
-    case TypeEVar(info, _)      => info
-    case TypeId(info, _)        => info
-    case TypeArrow(info, _, _)  => info
-    case TypeUnit(info)         => info
-    case TypeRecord(info, _)    => info
-    case TypeVariant(info, _)   => info
-    case TypeRec(info, _, _, _) => info
-    case TypeAll(info, _, _, _) => info
-    case TypeAbs(info, _, _)    => info
-    case TypeApp(info, _, _)    => info
-    case TypeBool(info)         => info
-    case TypeString(info)       => info
-    case TypeFloat(info)        => info
-    case TypeInt(info)          => info
+    case TypeVar(info, _, _)       => info
+    case TypeClass(info, _)        => info
+    case TypeEVar(info, _, _)      => info
+    case TypeId(info, _)           => info
+    case TypeArrow(info, _, _)     => info
+    case TypeUnit(info)            => info
+    case TypeRecord(info, _)       => info
+    case TypeVariant(info, _)      => info
+    case TypeRec(info, _, _, _)    => info
+    case TypeAll(info, _, _, _, _) => info
+    case TypeAbs(info, _, _)       => info
+    case TypeApp(info, _, _)       => info
+    case TypeBool(info)            => info
+    case TypeString(info)          => info
+    case TypeFloat(info)           => info
+    case TypeInt(info)             => info
+    case TypeAny(info)             => info
   })
 }
 
@@ -116,10 +131,13 @@ object Terms {
   case class TermAscribe(info: Info, t: Term, typ: Type) extends Term
   case class TermFold(info: Info, t: Type) extends Term
   // Higher Kind
-  case class TermTAbs(info: Info, i: String, t: Term) extends Term
+  case class TermTAbs(info: Info, i: String, cls: List[TypeClass], t: Term)
+      extends Term
   case class TermTApp(info: Info, t: Term, typ: Type) extends Term
   // Built-in functions with pre-defined type
   case class TermBuiltin(typ: Type) extends Term
+  // Type classes
+  case class TermClassMethod(info: Info, ty: Type) extends Term
 
   sealed trait Pattern
 
@@ -145,7 +163,7 @@ object Terms {
     case TermBuiltin(_)             => UnknownInfo
     case TermFold(info, _)          => info
     case TermTApp(info, _, _)       => info
-    case TermTAbs(info, _, _)       => info
+    case TermTAbs(info, _, _, _)    => info
     case TermAscribe(info, _, _)    => info
     case TermTag(info, _, _, _)     => info
     case TermRecord(info, _)        => info
@@ -158,6 +176,7 @@ object Terms {
     case TermMatch(info, _, _)      => info
     case TermLet(info, _, _, _)     => info
     case TermProj(info, _, _)       => info
+    case TermClassMethod(info, _)   => info
   })
 
   implicit val showPatternInfo: ShowInfo[Pattern] = ShowInfo.info(_ match {
@@ -179,9 +198,15 @@ object Bindings {
   sealed trait Binding
 
   case object NameBind extends Binding
-  case class TypeVarBind(k: Kind) extends Binding
+  case class TypeVarBind(k: Kind, cls: List[TypeClass] = List()) extends Binding
   case class TypeAbbBind(t: Type, k: Option[Kind] = None) extends Binding
   case class TermAbbBind(t: Term, ty: Option[Type] = None) extends Binding
+  case class TypeClassBind(k: Kind) extends Binding
+  case class TypeClassInstanceBind(
+      cls: String,
+      ty: Type,
+      methods: List[String]
+  ) extends Binding
 
   // contexts (Γ,∆,Θ): · | Γ,α | Γ,x:A | Γ,â | Γ,â = τ | Γ,▶â
   case class VarBind(t: Type) extends Binding

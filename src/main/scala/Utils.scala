@@ -13,4 +13,10 @@ object Utils {
     val messageBold = fansi.Bold.On(s": $message")
     s"$errorBold$messageBold${info.show}"
   }
+
+  def union[T](s1: List[T], s2: List[T]): List[T] =
+    (s1.toSet | s2.toSet).toList
+
+  def difference[T](s1: List[T], s2: List[T]): List[T] =
+    (s1.toSet.diff(s2.toSet)).toList
 }

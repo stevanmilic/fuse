@@ -6,80 +6,95 @@ import core.Types.*
 import parser.Info.*
 
 object BuiltIn {
-  // TODO: Add built-ins for the rest of the prim ops.
+  def buildFunc(args: List[Type], r: Type): Type =
+    (args :+ r).reduceRight(TypeArrow(UnknownInfo, _, _))
 
-  val Functions = List(
-    Bind(
-      "&add",
-      TermAbbBind(
-        TermBuiltin(
-          TypeArrow(
-            UnknownInfo,
-            TypeInt(UnknownInfo),
-            TypeArrow(UnknownInfo, TypeInt(UnknownInfo), TypeInt(UnknownInfo))
-          )
+  def buildBind(name: String, binding: Binding): Bind =
+    Bind(name, binding)
+
+  def buildClassMethodBind(name: String, ty: Type): Bind =
+    buildBind(name, TermAbbBind(TermClassMethod(i, ty)))
+
+  def buildClassBind(name: String): Bind =
+    buildBind("Add", TypeClassBind(KindStar))
+
+  def buildClassInstanceBind(
+      name: String,
+      typeClass: String,
+      ty: Type,
+      method: Tuple2[String, Term]
+  ): Bind =
+    buildBind(name, TypeClassInstanceBind(typeClass, ty, List(method._1)))
+
+  val i = UnknownInfo
+
+  // TODO: Add built-ins for the rest of the prim ops.
+  val Binds = List(
+    buildClassBind("Add"),
+    buildClassMethodBind(
+      "+",
+      TypeAll(
+        i,
+        "T",
+        KindStar,
+        List(TypeClass(i, "Add")),
+        buildFunc(
+          List(TypeVar(i, 0, 1), TypeVar(i, 0, 1)),
+          TypeVar(i, 0, 1)
         )
       )
     ),
-    Bind(
+    buildClassInstanceBind(
+      "#Add#int",
+      "Add",
+      TypeInt(i),
+      ("+", TermBuiltin(buildFunc(List(TypeInt(i), TypeInt(i)), TypeInt(i))))
+    ),
+    buildClassInstanceBind(
+      "#Add#float",
+      "Add",
+      TypeFloat(i),
+      (
+        "+",
+        TermBuiltin(buildFunc(List(TypeFloat(i), TypeFloat(i)), TypeFloat(i)))
+      )
+    ),
+    buildClassInstanceBind(
+      "#Add#string",
+      "Add",
+      TypeString(i),
+      (
+        "+",
+        TermBuiltin(
+          buildFunc(List(TypeString(i), TypeString(i)), TypeString(i))
+        )
+      )
+    ),
+    buildBind(
       "&sub",
       TermAbbBind(
-        TermBuiltin(
-          TypeArrow(
-            UnknownInfo,
-            TypeInt(UnknownInfo),
-            TypeArrow(UnknownInfo, TypeInt(UnknownInfo), TypeInt(UnknownInfo))
-          )
-        )
+        TermBuiltin(buildFunc(List(TypeInt(i), TypeInt(i)), TypeInt(i)))
       )
     ),
-    Bind(
+    buildBind(
       "&multiply",
       TermAbbBind(
-        TermBuiltin(
-          TypeArrow(
-            UnknownInfo,
-            TypeInt(UnknownInfo),
-            TypeArrow(UnknownInfo, TypeInt(UnknownInfo), TypeInt(UnknownInfo))
-          )
-        )
+        TermBuiltin(buildFunc(List(TypeInt(i), TypeInt(i)), TypeInt(i)))
       )
     ),
-    Bind(
+    buildBind(
       "&eq",
       TermAbbBind(
-        TermBuiltin(
-          TypeArrow(
-            UnknownInfo,
-            TypeInt(UnknownInfo),
-            TypeArrow(UnknownInfo, TypeInt(UnknownInfo), TypeBool(UnknownInfo))
-          )
-        )
+        TermBuiltin(buildFunc(List(TypeInt(i), TypeInt(i)), TypeInt(i)))
       )
     ),
-    Bind(
+    buildBind(
       "print",
-      TermAbbBind(
-        TermBuiltin(
-          TypeArrow(
-            UnknownInfo,
-            TypeString(UnknownInfo),
-            TypeUnit(UnknownInfo)
-          )
-        )
-      )
+      TermAbbBind(TermBuiltin(buildFunc(List(TypeString(i)), TypeUnit(i))))
     ),
-    Bind(
+    buildBind(
       "int_to_str",
-      TermAbbBind(
-        TermBuiltin(
-          TypeArrow(
-            UnknownInfo,
-            TypeInt(UnknownInfo),
-            TypeString(UnknownInfo)
-          )
-        )
-      )
+      TermAbbBind(TermBuiltin(buildFunc(List(TypeInt(i)), TypeString(i))))
     )
   )
 }
