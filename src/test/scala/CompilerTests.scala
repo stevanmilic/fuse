@@ -114,7 +114,6 @@ type List[A]:
     Cons(h: A, t: List[A])
     Nil
 
-
 impl List[A]:
     fun foldRight[A, B](as: List[A], z: B, f: (A, B) -> B) -> B
         match as:
@@ -131,7 +130,6 @@ impl List[A]:
                 Nil => acc
         }
         iter(Nil[B](), self)
-
 
 fun main() -> Unit
     let l = Cons(2, Cons(3, Nil))

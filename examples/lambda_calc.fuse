@@ -7,13 +7,13 @@ type Option[T]:
     Some(T)
 
 impl Option[T]:
-    fun is_some() -> bool
-        match this:
+    fun is_some(self) -> bool
+        match self:
             Some(v) => true
             _ => false
 
-    fun is_none() -> bool
-        match this:
+    fun is_none(self) -> bool
+        match self:
             Some(v) => false
             _ => true
 

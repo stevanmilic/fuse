@@ -2,24 +2,24 @@ type List[A]:
     Cons(h: A, t: List[A])
     Nil
 
-fun foldRight[A, B](as: List[A], z: B, f: (A, B) -> B) -> B
-    match as:
-        Cons(x, xs) => f(x, foldRight(xs, z, f))
-        Nil => z
-
 impl List[A]:
-    fun map[B](f: A -> B) -> List[B]
-        foldRight(this, Nil[B](), (h, t) => Cons(f(h), t))
+    fun foldRight[A, B](as: List[A], z: B, f: (A, B) -> B) -> B
+        match as:
+            Cons(x, xs) => f(x, List::foldRight(xs, z, f))
+            Nil => z
 
-    fun map_2[B](f: A -> B) -> List[B]
+    fun map[B](self, f: A -> B) -> List[B]
+        List::foldRight(self, Nil[B](), (h, t) => Cons(f(h), t))
+
+    fun map_2[B](self, f: A -> B) -> List[B]
         let iter = (acc, l) => {
             match l:
                 Cons(h, t) => Cons(f(h), iter(acc, t))
                 Nil => acc
         }
-        iter(Nil[B](), this)
+        iter(Nil[B](), self)
 
 fun main() -> Unit
     let l = Cons(2, Cons(3, Nil))
-    let l1 = l.map(v => v + 1)
+    let l1 = l.map_2(v => v + 1)
     ()

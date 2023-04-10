@@ -5,22 +5,25 @@
 - Algebraic Data Types (ADT)
 - Generics (Parametric Polymorphism)
 - Type Methods
+- Traits (Type Classes)
 - Pattern Matching
+- Uses [Grin](https://github.com/grin-compiler/grin) as compiler backend
 
 # Road-map
 
-- [x] Fuse Parser
+- [x] Parser
 - [x] Type Checker for System F with ADT and Pattern Matching
-- [x] Improve Type Error Messages
+- [x] Type Error Messages
 - [x] Code Generation to LLVM (without generics)
-- [x] Implement Type Inference for higher order types (HM or Bidirectional)
+- [x] Implement Type Inference for higher order types (Bidirectional)
+- [x] Implement Type Classes
+- [ ] Implement `do` notation
 - [ ] Code Generation to LLVM with monomorphisation
 - [ ] Add modules & imports
-- [ ] Implement Type Classes
 
 # Example with [Tree-Sitter](https://github.com/stevanmilic/tree-sitter-fuse)
 
-![fuse](https://user-images.githubusercontent.com/6879030/200401120-d3c9d833-5a8b-4e3e-a8ca-f6ef7834bdd2.png)
+![fuse](https://user-images.githubusercontent.com/6879030/231895964-3d6e447a-726c-4bfd-9b0a-7785a54d419d.png)
 
 # ADTs (Algebraic Data Types)
 
@@ -58,22 +61,46 @@ type Map[K, V]:
     value: V
 
 type Data[T](Option[Map[str, T]])
+
+type Tuple[A, B](A, B)
 ```
 
 # Type Methods
 
 ```
 impl Option[T]:
-    fun is_some() -> bool
-        match this:
+    fun is_some(self) -> bool
+        match self:
             Some(_) => True
             None => False
 
 impl Point:
-    fun distance(other: Point) -> f32
-        let x_diff = this.x - other.x
-        let y_diff = this.y - other.y
+    fun distance(self, other: Point) -> f32
+        let x_diff = self.x - other.x
+        let y_diff = self.y - other.y
         math.sqrt(x_diff * x_diff - y_diff * y_diff)
+```
+
+# Traits (Type Classes)
+
+```
+trait Monad[A]:
+  fun unit[T](a: T) -> Self[T];
+
+  fun flat_map[B](self, f: A -> Self[B]) -> Self[B];
+
+  fun map[B](self, f: A -> B) -> Self[B]
+    let f = a => Self::unit(f(a))
+    self.flat_map(f)
+
+impl Monad for Option[A]:
+  fun unit[T](a: T) -> Option[T]
+    Some(a)
+
+  fun flat_map[B](self, f: A -> Option[B]) -> Option[B]
+    match self:
+      Some(v) => f(v)
+      _ => None
 ```
 
 # Type Alias
