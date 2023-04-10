@@ -879,10 +879,7 @@ trait Monad[A]:
   fun flat_map[B](self, f: A -> Self[B]) -> Self[B];
 
   fun map[B](self, f: A -> B) -> Self[B]
-    let f = a => Self::unit(f(a))
-    self.flat_map(f)
-    # TODO: This inline closure doesn't type check correctly :/
-    # self.flat_map(a => self.unit(f(a)))
+    self.flat_map(a => Self::unit(f(a)))
 
 type Option[T]:
   Some(T)

@@ -103,16 +103,17 @@ object TypeChecker {
         _ <- checkKindStar(variableType)
         _ <- EitherT.liftF(Context.addBinding(variable, VarBind(variableType)))
         exprType <- pureInfer(expr)
+        shiftedExprType <- EitherT.liftF(typeShiftOnContextDiff(exprType))
         _ <- returnType match {
           case Some(ty) =>
             isSubtypeWithTypeError(
               ty,
-              exprType,
-              WrongReturnTypeError(ty.info, exprType, ty)
+              shiftedExprType,
+              WrongReturnTypeError(ty.info, shiftedExprType, ty)
             )
           case _ => ().pure[StateEither]
         }
-      } yield TypeArrow(info, variableType, typeShift(-1, exprType))
+      } yield TypeArrow(info, variableType, typeShift(-1, shiftedExprType))
     case TermApp(info, fun, arg) =>
       for {
         funType <- infer(fun)
