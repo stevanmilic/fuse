@@ -34,8 +34,11 @@ object Types {
   case class FUnitType(info: Info) extends FType
   type FTypes = Seq[FType]
 
+  case class FSelfParam(info: Info)
   case class FParam(info: Info, i: FIdentifier, t: FType)
+
   type FParams = Seq[FParam]
+  case class FParamsWithSelf(self: Option[FSelfParam], params: Option[FParams])
 }
 
 abstract class Types(fileName: String) extends Identifiers(fileName) {
@@ -76,8 +79,15 @@ abstract class Types(fileName: String) extends Identifiers(fileName) {
   def TypeList = rule { Type.+(',') }
   def TypeArgs = rule { '[' ~ TypeList.named("types") ~ ']' }
 
+  def selfParam = rule {
+    info ~ `self` ~> FSelfParam.apply
+  }
   def param = rule {
     info ~ identifier ~ `:` ~ Type.named("type") ~> FParam.apply
   }
   def params = rule { param.+(',') }
+
+  def paramsWithSelf = rule {
+    selfParam.? ~ ",".? ~ params.? ~> FParamsWithSelf.apply
+  }
 }

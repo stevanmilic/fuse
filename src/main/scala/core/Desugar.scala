@@ -22,7 +22,7 @@ object Desugar {
   val MethodNamePrefix = "!"
   val RecordConstrPrefix = "%"
   val SelfTypeName = "Self"
-  val ThisIdentifier = "this"
+  val SelfIdentifier = "self"
 
   // Patterns
   val AlphaNum = "[a-zA-Z0-9]+";
@@ -94,25 +94,14 @@ object Desugar {
       } yield List(funcBind)
     }
     case FTypeFuncDecls(info, typeIdentifier, typeParams, functions) =>
-      val param = FParam(
-        info,
-        FIdentifier(ThisIdentifier),
-        FSimpleType(
-          info,
-          typeIdentifier,
-          Some(
-            typeParams
-              .getOrElse(Seq())
-              .map(tp => FSimpleType(info, FIdentifier(tp.i.value)))
-          )
-        )
-      )
-      val modifySignature = (sig: FFuncSig) =>
+      val modifySignature = (sig: FMethodSig) =>
+        val (typ, p) =
+          toParamsWithSelf(sig.p, typeIdentifier, typeParams, sig.tp)
         FFuncSig(
           sig.info,
           FIdentifier(toMethodId(sig.i.value, typeIdentifier.value)),
-          typeParams.fold(sig.tp)(p => Some(sig.tp.fold(p)(p ++ _))),
-          Some(sig.p.fold(Seq(param))(param +: _)),
+          typ,
+          p,
           sig.r
         )
       functions.toList
@@ -125,30 +114,14 @@ object Desugar {
         FIdentifier(SelfTypeName),
         Some(Seq(FSimpleType(info, traitIdentifier))) // type class constraint
       )
-      // NOTE: The difference between type parameters and arguments (value params).
-      val selfParam = FParam(
-        info,
-        FIdentifier(ThisIdentifier),
-        FSimpleType(
-          info,
-          // NOTE: Here we are using the type param with the trait type bound
-          // we just added.
-          FIdentifier(SelfTypeName),
-          Some(
-            typeParams
-              .getOrElse(Seq())
-              .map(tp => FSimpleType(info, FIdentifier(tp.i.value)))
-          )
-        )
-      )
-      val methodTypeParams =
-        typeParams.map(selfTypeParam +: _).getOrElse(Seq(selfTypeParam))
-      val modifySignature = (sig: FFuncSig) =>
+      val modifySignature = (sig: FMethodSig) =>
+        val (typ, p) =
+          toParamsWithSelf(sig.p, FIdentifier(SelfTypeName), typeParams, sig.tp)
         FFuncSig(
           sig.info,
           FIdentifier(toMethodId(sig.i.value, traitIdentifier.value)),
-          Some(sig.tp.map(methodTypeParams ++ _).getOrElse(methodTypeParams)),
-          Some(sig.p.fold(Seq(selfParam))(selfParam +: _)),
+          Some(selfTypeParam +: typ.toSeq.flatten),
+          p,
           sig.r
         )
       for {
@@ -173,20 +146,9 @@ object Desugar {
           typeParams,
           methods
         ) =>
-      val param = FParam(
-        info,
-        FIdentifier(ThisIdentifier),
-        FSimpleType(
-          info,
-          typeIdentifier,
-          Some(
-            typeParams
-              .getOrElse(Seq())
-              .map(tp => FSimpleType(info, FIdentifier(tp.i.value)))
-          )
-        )
-      )
-      val modifySignature = (sig: FFuncSig) =>
+      val modifySignature = (sig: FMethodSig) =>
+        val (typ, p) =
+          toParamsWithSelf(sig.p, typeIdentifier, typeParams, sig.tp)
         FFuncSig(
           sig.info,
           FIdentifier(
@@ -196,8 +158,8 @@ object Desugar {
               traitIdentifier.value
             )
           ),
-          typeParams.fold(sig.tp)(p => Some(sig.tp.fold(p)(p ++ _))),
-          Some(sig.p.fold(Seq(param))(param +: _)),
+          typ,
+          p,
           sig.r
         )
       for {
@@ -365,12 +327,34 @@ object Desugar {
                 TermTApp(info, term, ty)
               )
             )
-          withImplicitThis = TermApp(info, typedTerm, methodProj.t)
+          // TODO: Should we always apply self here? :thinking:
+          withImplicitSelf = TermApp(info, typedTerm, methodProj.t)
           computedTerm <- args.toList.flatten.flatten
             .traverse(toTerm(_))
             .map(
-              _.foldLeft(withImplicitThis)((term, arg) =>
+              _.foldLeft(withImplicitSelf)((term, arg) =>
                 TermApp(info, term, arg)
+              )
+            )
+        } yield computedTerm
+      case FAssocApp(info, t, i, typeArgs, args) =>
+        for {
+          ty <- toTypeVar(t.info, t.value)
+          assocProj = TermAssocProj(info, ty, i.value)
+          typedTerm <- typeArgs
+            .getOrElse(Seq())
+            .toList
+            .traverse(toType(_))
+            .map(
+              _.foldLeft(assocProj: Term)((term, ty) =>
+                TermTApp(info, term, ty)
+              )
+            )
+          computedTerm <- args.toList.flatten.flatten
+            .traverse(toTerm(_))
+            .map(
+              _.foldLeft(typedTerm)((term, arg) =>
+                TermApp(term.info, term, arg)
               )
             )
         } yield computedTerm
@@ -553,6 +537,37 @@ object Desugar {
       TypeAll(p._1, p._2, kind, p._3, acc)
     )
   } yield TermClassMethod(sig.info, methodType)
+
+  def toParamsWithSelf(
+      params: Option[FParamsWithSelf],
+      selfTypeIdentifier: FIdentifier,
+      selfTypeParams: FTypeParamClause,
+      functionTypeParams: FTypeParamClause
+  ): Tuple2[FTypeParamClause, Option[FParams]] = {
+    params match {
+      case Some(FParamsWithSelf(Some(FSelfParam(info)), args)) =>
+        val selfParam = FParam(
+          info,
+          FIdentifier(SelfIdentifier),
+          FSimpleType(
+            info,
+            selfTypeIdentifier,
+            Some(
+              selfTypeParams
+                .getOrElse(Seq())
+                .map(tp => FSimpleType(info, FIdentifier(tp.i.value)))
+            )
+          )
+        )
+        val typeParams =
+          selfTypeParams.toSeq.flatten ++ functionTypeParams.toSeq.flatten
+        val combinedParams = selfParam +: args.toSeq.flatten
+        (Some(typeParams), Some(combinedParams))
+      case Some(FParamsWithSelf(None, Some(params))) =>
+        (functionTypeParams, Some(params))
+      case _ => (functionTypeParams, None)
+    }
+  }
 
   def toTermVar(info: Info, i: String): ContextState[Option[Term]] =
     State { ctx =>

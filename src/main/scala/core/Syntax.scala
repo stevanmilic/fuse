@@ -125,6 +125,7 @@ object Terms {
   case class TermLet(info: Info, i: String, t1: Term, t2: Term) extends Term
   case class TermProj(info: Info, t: Term, i: String) extends Term
   case class TermMethodProj(info: Info, t: Term, i: String) extends Term
+  case class TermAssocProj(info: Info, t: Type, i: String) extends Term
   // ADT
   case class TermRecord(info: Info, v: List[(String, Term)]) extends Term
   case class TermTag(info: Info, i: String, t: Term, typ: Type) extends Term
@@ -168,6 +169,7 @@ object Terms {
     case TermTag(info, _, _, _)     => info
     case TermRecord(info, _)        => info
     case TermMethodProj(info, _, _) => info
+    case TermAssocProj(info, _, _)  => info
     case TermFix(info, _)           => info
     case TermAbs(info, _, _, _, _)  => info
     case TermClosure(info, _, _, _) => info

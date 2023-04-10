@@ -55,8 +55,21 @@ object FuseParser {
       r: FType
   )
 
+  case class FMethodSig(
+      info: Info,
+      i: FIdentifier,
+      tp: FTypeParamClause,
+      p: Option[FParamsWithSelf],
+      r: FType
+  )
+
   case class FFuncDecl(
       sig: FFuncSig,
+      exprs: Seq[FExpr]
+  ) extends FDecl
+
+  case class FMethodDecl(
+      sig: FMethodSig,
       exprs: Seq[FExpr]
   ) extends FDecl
 
@@ -64,14 +77,14 @@ object FuseParser {
       info: Info,
       i: FIdentifier,
       tp: FTypeParamClause,
-      f: Seq[FFuncDecl]
+      f: Seq[FMethodDecl]
   ) extends FDecl
 
   case class FTraitDecl(
       info: Info,
       i: FIdentifier,
       tp: FTypeParamClause,
-      f: Seq[Either[FFuncDecl, FFuncSig]]
+      f: Seq[Either[FMethodDecl, FMethodSig]]
   ) extends FDecl
 
   case class FTraitInstance(
@@ -80,19 +93,20 @@ object FuseParser {
       traitParams: FTypeParamClause,
       typeIdentifier: FIdentifier,
       typeParams: FTypeParamClause,
-      methods: Seq[FFuncDecl]
+      methods: Seq[FMethodDecl]
   ) extends FDecl
 
   implicit val showDeclInfo: ShowInfo[FDecl] = ShowInfo.info(_ match {
-    case FPrimitiveTypeDecl(info, _)              => info
-    case FVariantTypeDecl(info, _, _, _)          => info
-    case FRecordTypeDecl(info, _, _, _)           => info
-    case FTupleTypeDecl(info, _, _, _)            => info
-    case FTypeAlias(info, _, _, _)                => info
-    case FFuncDecl(FFuncSig(info, _, _, _, _), _) => info
-    case FTypeFuncDecls(info, _, _, _)            => info
-    case FTraitDecl(info, _, _, _)                => info
-    case FTraitInstance(info, _, _, _, _, _)      => info
+    case FPrimitiveTypeDecl(info, _)                  => info
+    case FVariantTypeDecl(info, _, _, _)              => info
+    case FRecordTypeDecl(info, _, _, _)               => info
+    case FTupleTypeDecl(info, _, _, _)                => info
+    case FTypeAlias(info, _, _, _)                    => info
+    case FFuncDecl(FFuncSig(info, _, _, _, _), _)     => info
+    case FMethodDecl(FMethodSig(info, _, _, _, _), _) => info
+    case FTypeFuncDecls(info, _, _, _)                => info
+    case FTraitDecl(info, _, _, _)                    => info
+    case FTraitInstance(info, _, _, _, _, _)          => info
 
   })
 }
@@ -172,9 +186,25 @@ class FuseParser(val input: ParserInput, fileName: String)
     }
   }
 
+  def MethodSig = {
+    rule {
+      `fun` ~ info ~ identifier ~ TypeParamClause
+        .named("type params")
+        .? ~ "(" ~ paramsWithSelf
+        .named("parameters")
+        .? ~ ")" ~ `->` ~ Type ~> FMethodSig.apply
+    }
+  }
+
+  def MethodDecl = {
+    rule {
+      MethodSig ~ BlockExpr ~> FMethodDecl.apply
+    }
+  }
+
   def TraitDecl = {
     val TraitFunc = () =>
-      rule { FuncSig ~ ";" ~> (Right(_)) | FuncDecl ~> (Left(_)) }
+      rule { MethodSig ~ ";" ~> (Right(_)) | MethodDecl ~> (Left(_)) }
     rule {
       `trait` ~ info ~ identifier ~ TypeParamClause.? ~ `:` ~ oneOrMoreWithIndent(
         TraitFunc,
@@ -184,7 +214,7 @@ class FuseParser(val input: ParserInput, fileName: String)
     }
   }
 
-  val TypeFunc = () => FuncDecl
+  val TypeFunc = () => MethodDecl
   def ImplFuncDecls = oneOrMoreWithIndent(TypeFunc, "function")
   def TraitInstance = rule {
     `impl` ~ info ~ identifier ~ TypeParamClause.? ~ `for` ~ identifier ~ TypeParamClause.? ~ `:` ~ ImplFuncDecls ~> FTraitInstance.apply

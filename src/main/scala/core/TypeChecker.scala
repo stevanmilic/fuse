@@ -144,38 +144,24 @@ object TypeChecker {
         typeBounds <- EitherT.liftF(
           getTypeBounds(rootTypeVarOption.getOrElse(tyT1S))
         )
-        fieldType <- (tyT1S, rootTypeVarOption, typeBounds) match {
-          // NOTE: Check if the method is on the record field first.
-          case (TypeRec(_, _, _, TypeRecord(_, fields)), _, _)
-              if fields.exists { case (f, _) => f == method } =>
-            fields
-              .find { case (f, _) => f == method }
-              .map { case (_, ty) =>
-                // TODO: Because methods have an implicit `this` parameter, we
-                // just skip it (proxy) for record's functions.
-                TypeArrow(ty.info, TypeAny(ty.info), typeShift(-1, ty))
-                  .pure[StateEither]
-              }
-              .get
-          case (TypeRec(_, _, _, _), Some(rootTypeVar), _) =>
-            getTypeMethod(info, tyT1, rootTypeVar, method)
-          case (TypeVar(_, _, _) | TypeApp(_, _, _), _, cls) =>
-            for {
-              methodTypes <- cls.traverse(getTypeClassMethodType(_, method))
-              ty <- methodTypes match {
-                case h :: Nil => h.pure[StateEither]
-                case Nil => TypeError.format(NoMethodsOnTypeError(info, tyT1S))
-                case _ =>
-                  TypeError.format(
-                    MultipleTypeClassMethodsFound(info, cls, method)
-                  )
-              }
-            } yield ty
-          case (TypeAll(_, _, _, _, tpe), _, _) =>
-            TypeError.format(MissingTypeAnnotation(info, typeShift(-1, tyT1S)))
-          case _ => TypeError.format(NoMethodsOnTypeError(info, tyT1S))
-        }
-      } yield fieldType
+        methodType <- inferMethod(tyT1, tyT1S, typeBounds, method, info)
+      } yield methodType
+    case TermAssocProj(info, ty, method) =>
+      for {
+        tyS <- EitherT.liftF(simplifyType(ty))
+        rootTypeVarOption = findRootTypeVar(ty)
+        typeBounds <- EitherT.liftF(
+          getTypeBounds(rootTypeVarOption.getOrElse(tyS))
+        )
+        assocMethodType <-
+          (tyS, rootTypeVarOption, typeBounds) match {
+            case (_: TypeRec | _: TypeAbs, Some(rootTypeVar), _) =>
+              getTypeMethod(info, ty, rootTypeVar, method)
+            case (_: TypeVar | _: TypeApp, _, cls) =>
+              inferTypeClassMethod(info, method, cls, tyS)
+            case _ => TypeError.format(NoMethodsOnTypeError(info, tyS))
+          }
+      } yield assocMethodType
     case TermFix(info, t1) =>
       for {
         tyT1 <- infer(t1)
@@ -333,6 +319,57 @@ object TypeChecker {
         )
       )
   }
+
+  def inferMethod(
+      ty: Type,
+      simplifiedType: Type,
+      typeBounds: List[TypeClass],
+      method: String,
+      info: Info
+  ): StateEither[Type] =
+    (simplifiedType, findRootTypeVar(ty), typeBounds) match {
+      // NOTE: Check if the method is on the record field first.
+      case (TypeRec(_, _, _, TypeRecord(_, fields)), _, _) if fields.exists {
+            case (f, _) => f == method
+          } =>
+        fields
+          .find { case (f, _) => f == method }
+          .map { case (_, ty) =>
+            // TODO: Because methods have an implicit `self` parameter, we
+            // just skip it (proxy) for record's functions.
+            TypeArrow(ty.info, TypeAny(ty.info), typeShift(-1, ty))
+              .pure[StateEither]
+          }
+          .get
+      case (_: TypeRec, Some(rootTypeVar), _) =>
+        getTypeMethod(info, ty, rootTypeVar, method)
+      case (_: TypeVar | _: TypeApp, _, cls) =>
+        inferTypeClassMethod(info, method, cls, simplifiedType)
+      case (TypeAll(_, _, _, _, tpe), _, _) =>
+        TypeError.format(
+          MissingTypeAnnotation(info, typeShift(-1, simplifiedType))
+        )
+      case _ => TypeError.format(NoMethodsOnTypeError(info, simplifiedType))
+    }
+
+  def inferTypeClassMethod(
+      info: Info,
+      method: String,
+      cls: List[TypeClass],
+      simplifiedType: Type
+  ): StateEither[Type] =
+    for {
+      methodTypes <- cls.traverse(getTypeClassMethodType(_, method))
+      ty <- methodTypes match {
+        case h :: Nil => h.pure[StateEither]
+        case Nil =>
+          TypeError.format(NoMethodsOnTypeError(info, simplifiedType))
+        case _ =>
+          TypeError.format(
+            MultipleTypeClassMethodsFound(info, cls, method)
+          )
+      }
+    } yield ty
 
   def typeErrorEitherCond[T](
       cond: Boolean,

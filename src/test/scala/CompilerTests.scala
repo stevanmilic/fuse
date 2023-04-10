@@ -62,47 +62,47 @@ type Option[A]:
     Some(A)
 
 impl Option[A]:
-    fun is_some() -> bool
-        match this:
+    fun is_some(self) -> bool
+        match self:
             Some(v) => true
             _ => false
 
-    fun is_none() -> bool
-        match this:
+    fun is_none(self) -> bool
+        match self:
             Some(v) => false
             _ => true
 
-    fun map[B](f: A -> B) -> Option[B]
-        match this:
+    fun map[B](self, f: A -> B) -> Option[B]
+        match self:
             Some(v) => Some(f(v))
             _ => None
 
-    fun get_or_else(default: A) -> A
-        match this:
+    fun get_or_else(self, default: A) -> A
+        match self:
             Some(a) => a
             None => default
 
-    fun flat_map[B](f: A -> Option[B]) -> Option[B]
-        let v = this.map(f)
+    fun flat_map[B](self, f: A -> Option[B]) -> Option[B]
+        let v = self.map(f)
         v.get_or_else(None)
 
-    fun filter(f: A -> bool) -> Option[A]
-        match this:
+    fun filter(self, f: A -> bool) -> Option[A]
+        match self:
             Some(a) => {
                 match f(a):
-                    true => this
+                    true => self
                     _ => None
             }
             _ => None
 
-fun option_str(v: i32) -> Option[str]
-    let s = Some(v)
-    s.map(a => int_to_str(a))
+    fun to_str(v: i32) -> Option[str]
+        let s = Some(v)
+        s.map(a => int_to_str(a))
 
 fun main() -> i32
     let o = Some(5)
     let o1 = o.flat_map(t => Some(t + 1))
-    let l = option_str(5)
+    let l = Option::to_str(5)
     match l:
         Some(v) => 0
         None => 1
@@ -114,22 +114,24 @@ type List[A]:
     Cons(h: A, t: List[A])
     Nil
 
-fun foldRight[A, B](as: List[A], z: B, f: (A, B) -> B) -> B
-    match as:
-        Cons(x, xs) => f(x, foldRight(xs, z, f))
-        Nil => z
 
 impl List[A]:
-    fun map[B](f: A -> B) -> List[B]
-        foldRight(this, Nil[B](), (h, t) => Cons(f(h), t))
+    fun foldRight[A, B](as: List[A], z: B, f: (A, B) -> B) -> B
+        match as:
+            Cons(x, xs) => f(x, List::foldRight(xs, z, f))
+            Nil => z
 
-    fun map_2[B](f: A -> B) -> List[B]
+    fun map[B](self, f: A -> B) -> List[B]
+        List::foldRight(self, Nil[B](), (h, t) => Cons(f(h), t))
+
+    fun map_2[B](self, f: A -> B) -> List[B]
         let iter = (acc, l) => {
             match l:
                 Cons(h, t) => Cons(f(h), iter(acc, t))
                 Nil => acc
         }
-        iter(Nil[B](), this)
+        iter(Nil[B](), self)
+
 
 fun main() -> Unit
     let l = Cons(2, Cons(3, Nil))
@@ -148,13 +150,13 @@ type Option[T]:
     Some(T)
 
 impl Option[T]:
-    fun is_some() -> bool
-        match this:
+    fun is_some(self) -> bool
+        match self:
             Some(v) => true
             _ => false
 
-    fun is_none() -> bool
-        match this:
+    fun is_none(self) -> bool
+        match self:
             Some(v) => false
             _ => true
 
@@ -237,8 +239,8 @@ type Option[A]:
     Some(A)
 
 impl Option[A]:
-    fun is_some() -> bool
-        match this:
+    fun is_some(self) -> bool
+        match self:
             Some(v) => true
             _ => false
 
@@ -593,15 +595,15 @@ fun main() -> i32
   test("check simple trait") {
     fuse("""
 trait Summary:
-  fun summarize() -> str;
+  fun summarize(self) -> str;
 
 type Tweet:
   username: str
   content: str
 
 impl Summary for Tweet:
-  fun summarize() -> str
-    this.username + ": " + this.content
+  fun summarize(self) -> str
+    self.username + ": " + self.content
 
 fun notify[T: Summary](s: T) -> Unit
   print("Breaking news! " + s.summarize())
@@ -657,15 +659,15 @@ fun main() -> i32
     fuse(
       """
 trait Summary:
-  fun summarize() -> str;
+  fun summarize(self) -> str;
 
 type Tweet:
   username: str
   content: str
 
 impl Summary for Tweet:
-  fun summarize() -> str
-    this.username + ": " + this.content
+  fun summarize(self) -> str
+    self.username + ": " + self.content
 
 fun notify[T: Summary](s: T) -> Unit
   print("Breaking news! " + s.summarize())
@@ -703,7 +705,7 @@ fun main() -> i32
     fuse(
       """
 trait Summary:
-  fun summarize() -> str;
+  fun summarize(self) -> str;
 
 type Tweet:
   username: str
@@ -740,7 +742,7 @@ impl Summary for Tweet:
 fun main() -> i32
     0
         """,
-      Some(", found `Tweet -> i32` for `summarize`")
+      Some(", found `Unit -> i32` for `summarize`")
     )
 
   }
@@ -748,18 +750,18 @@ fun main() -> i32
     fuse(
       """
 trait Summary:
-  fun summarize() -> str;
+  fun summarize(self) -> str;
 
 type Tweet:
   username: str
   content: str
 
 impl Summary for Tweet:
-  fun make() -> str
-    this.username + this.content
+  fun make(self) -> str
+    self.username + self.content
 
-  fun summarize() -> str
-    this.username + ": " + this.content
+  fun summarize(self) -> str
+    self.username + ": " + self.content
 
 fun main() -> i32
     0
@@ -772,16 +774,16 @@ fun main() -> i32
     fuse(
       """
 trait Summary:
-  fun summarize() -> str;
-  fun title() -> str;
+  fun summarize(self) -> str;
+  fun title(self) -> str;
 
 type Tweet:
   username: str
   content: str
 
 impl Summary for Tweet:
-  fun summarize() -> str
-    this.username + ": " + this.content
+  fun summarize(self) -> str
+    self.username + ": " + self.content
 
 fun main() -> i32
     0
@@ -793,17 +795,17 @@ fun main() -> i32
   test("check generic trait functor implementation") {
     fuse("""
 trait Functor[A]:
-  fun map[B](f: A -> B) -> Self[B];
+  fun map[B](self, f: A -> B) -> Self[B];
   # This how the desugared type should look like.
-  # fun map[Self: Functor, A, B](this: Self[B], f: A -> B) -> Self[B];
+  # fun map[Self: Functor, A, B](self: Self[B], f: A -> B) -> Self[B];
 
 type Option[T]:
   Some(T)
   None
 
 impl Functor for Option[A]:
-  fun map[B](f: A -> B) -> Option[B]
-    match this:
+  fun map[B](self, f: A -> B) -> Option[B]
+    match self:
       Some(v) => Some(f(v))
       _ => None
 
@@ -817,19 +819,19 @@ fun main() -> i32
   test("check generic trait monad implementation") {
     fuse("""
 trait Monad[A]:
-  fun unit(a: A) -> Self[A];
-  fun flat_map[B](f: A -> Self[B]) -> Self[B];
+  fun unit[A](a: A) -> Self[A];
+  fun flat_map[B](self, f: A -> Self[B]) -> Self[B];
 
 type Option[T]:
   Some(T)
   None
 
 impl Monad for Option[A]:
-  fun unit(a: A) -> Option[A]
+  fun unit[A](a: A) -> Option[A]
     Some(a)
 
-  fun flat_map[B](f: A -> Option[B]) -> Option[B]
-    match this:
+  fun flat_map[B](self, f: A -> Option[B]) -> Option[B]
+    match self:
       Some(v) => f(v)
       _ => None
 
@@ -844,17 +846,17 @@ fun main() -> i32
     fuse(
       """
 trait Functor[A]:
-  fun map[B](f: A -> B) -> Self[B];
+  fun map[B](self, f: A -> B) -> Self[B];
   # This how the desugared type should look like.
-  # fun map[Self: Functor, A, B](this: Self[B], f: A -> B) -> Self[B];
+  # fun map[Self: Functor, A, B](self: Self[B], f: A -> B) -> Self[B];
 
 type Option[T]:
   Some(T)
   None
 
 impl Functor for Option[A]:
-  fun map[B](f: A -> B) -> Option[A]
-    match this:
+  fun map[B](self, f: A -> B) -> Option[A]
+    match self:
       Some(v) => Some(v)
       _ => None
 
@@ -872,26 +874,26 @@ fun main() -> i32
   test("check generic trait monad with default implementation") {
     fuse("""
 trait Monad[A]:
-  fun unit[B](a: B) -> Self[B];
+  fun unit[T](a: T) -> Self[T];
 
-  fun flat_map[B](f: A -> Self[B]) -> Self[B];
+  fun flat_map[B](self, f: A -> Self[B]) -> Self[B];
 
-  fun map[B](f: A -> B) -> Self[B]
-    let f = a => this.unit(f(a))
-    this.flat_map(f)
+  fun map[B](self, f: A -> B) -> Self[B]
+    let f = a => Self::unit(f(a))
+    self.flat_map(f)
     # TODO: This inline closure doesn't type check correctly :/
-    # this.flat_map(a => this.unit(f(a)))
+    # self.flat_map(a => self.unit(f(a)))
 
 type Option[T]:
   Some(T)
   None
 
 impl Monad for Option[A]:
-  fun unit(a: A) -> Option[A]
+  fun unit[T](a: T) -> Option[T]
     Some(a)
 
-  fun flat_map[B](f: A -> Option[B]) -> Option[B]
-    match this:
+  fun flat_map[B](self, f: A -> Option[B]) -> Option[B]
+    match self:
       Some(v) => f(v)
       _ => None
 
@@ -906,27 +908,37 @@ fun main() -> i32
     fuse("""
 trait Monad[A]:
   fun unit[B](a: B) -> Self[B];
-  fun flat_map[B](f: A -> Self[B]) -> Self[B];
+  fun flat_map[B](self, f: A -> Self[B]) -> Self[B];
 
 type Tuple[A, B](A, B)
 
 type State[S, A]:
   run: S -> Tuple[A, S]
 
+impl State[S, A]:
+  fun get[S]() -> State[S, S] 
+    State((s: S) => Tuple(s, s))
+
+  fun value(self, s: S) -> A
+    match self.run(s):
+      Tuple(v, _) => v
+
 impl Monad for State[S, A]:
-  fun unit(a: A) -> State[S, A]
+  fun unit[S, A](a: A) -> State[S, A]
     let f = (s: S) => Tuple(a, s) 
     State(f)
 
-  fun flat_map[B](f: A -> State[S, B]) -> State[S, B]
+  fun flat_map[B](self, f: A -> State[S, B]) -> State[S, B]
     let r = s => {
-      let v = this.run(s)
+      let v = self.run(s)
       f(v.1).run(v.2)
     }
     State(r)
 
 fun main() -> i32
-    0
+  let s = State::unit(5)
+  let s1 = s.flat_map(i => State(a => Tuple(a + i, i)))
+  s1.value(2)
         """)
 
   }
@@ -935,11 +947,11 @@ fun main() -> i32
 trait Monad[A]:
   fun unit[B](a: B) -> Self[B];
 
-  fun flat_map[B](f: A -> Self[B]) -> Self[B];
+  fun flat_map[B](self, f: A -> Self[B]) -> Self[B];
 
-  fun map[B](f: A -> B) -> Self[B]
-    let f = a => this.unit(f(a))
-    this.flat_map(f)
+  fun map[B](self, f: A -> B) -> Self[B]
+    let f = a => Self::unit(f(a))
+    self.flat_map(f)
 
 trait Show[A]:
   fun show() -> str;
@@ -949,11 +961,11 @@ type Option[T]:
   None
 
 impl Monad for Option[A]:
-  fun unit(a: A) -> Option[A]
+  fun unit[A](a: A) -> Option[A]
     Some(a)
 
-  fun flat_map[B](f: A -> Option[B]) -> Option[B]
-    match this:
+  fun flat_map[B](self, f: A -> Option[B]) -> Option[B]
+    match self:
       Some(v) => f(v)
       _ => None
 

@@ -83,6 +83,13 @@ object Expressions {
       typeArguments: FTypeArguments = None,
       args: Seq[FArguments]
   ) extends FInfixExpr
+  case class FAssocApp(
+      info: Info,
+      t: FVar,
+      id: FVar,
+      typeArguments: FTypeArguments = None,
+      args: Seq[FArguments]
+  ) extends FInfixExpr
 
   // Literals
   sealed trait FLiteral extends FInfixExpr with FPattern
@@ -93,31 +100,32 @@ object Expressions {
   case class FUnit(info: Info) extends FLiteral
 
   implicit val showExprInfo: ShowInfo[FExpr] = ShowInfo.info(_ match {
-    case FLetExpr(info, _, _, _)   => info
-    case FAbs(info, _, _, _)       => info
-    case FMatch(info, _, _)        => info
-    case FVar(info, _)             => info
-    case FProj(info, _, _)         => info
-    case FApp(info, _, _, _)       => info
-    case FMethodApp(info, _, _, _) => info
-    case FBool(info, _)            => info
-    case FInt(info, _)             => info
-    case FFloat(info, _)           => info
-    case FString(info, _)          => info
-    case FUnit(info)               => info
-    case FAddition(lhs, _)         => (lhs: FExpr).info
-    case FSubtraction(lhs, _)      => (lhs: FExpr).info
-    case FMultiplication(lhs, _)   => (lhs: FExpr).info
-    case FDivision(lhs, _)         => (lhs: FExpr).info
-    case FModulo(lhs, _)           => (lhs: FExpr).info
-    case FEquality(lhs, _)         => (lhs: FExpr).info
-    case FNotEquality(lhs, _)      => (lhs: FExpr).info
-    case FAnd(lhs, _)              => (lhs: FExpr).info
-    case FOr(lhs, _)               => (lhs: FExpr).info
-    case FLessThan(lhs, _)         => (lhs: FExpr).info
-    case FLessThanEqual(lhs, _)    => (lhs: FExpr).info
-    case FGreaterThan(lhs, _)      => (lhs: FExpr).info
-    case FGreaterThanEqual(lhs, _) => (lhs: FExpr).info
+    case FLetExpr(info, _, _, _)     => info
+    case FAbs(info, _, _, _)         => info
+    case FMatch(info, _, _)          => info
+    case FVar(info, _)               => info
+    case FProj(info, _, _)           => info
+    case FApp(info, _, _, _)         => info
+    case FMethodApp(info, _, _, _)   => info
+    case FAssocApp(info, _, _, _, _) => info
+    case FBool(info, _)              => info
+    case FInt(info, _)               => info
+    case FFloat(info, _)             => info
+    case FString(info, _)            => info
+    case FUnit(info)                 => info
+    case FAddition(lhs, _)           => (lhs: FExpr).info
+    case FSubtraction(lhs, _)        => (lhs: FExpr).info
+    case FMultiplication(lhs, _)     => (lhs: FExpr).info
+    case FDivision(lhs, _)           => (lhs: FExpr).info
+    case FModulo(lhs, _)             => (lhs: FExpr).info
+    case FEquality(lhs, _)           => (lhs: FExpr).info
+    case FNotEquality(lhs, _)        => (lhs: FExpr).info
+    case FAnd(lhs, _)                => (lhs: FExpr).info
+    case FOr(lhs, _)                 => (lhs: FExpr).info
+    case FLessThan(lhs, _)           => (lhs: FExpr).info
+    case FLessThanEqual(lhs, _)      => (lhs: FExpr).info
+    case FGreaterThan(lhs, _)        => (lhs: FExpr).info
+    case FGreaterThanEqual(lhs, _)   => (lhs: FExpr).info
   })
 
   implicit val showPatternInfo: ShowInfo[FPattern] = ShowInfo.info(_ match {
@@ -229,12 +237,22 @@ abstract class Expressions(fileName: String) extends Types(fileName) {
         .+ ~> FMethodApp.apply
     }
 
+    def AssocCallExpr = rule {
+      info ~ AssocProj ~ TypeArguments.named("type arguments").? ~ Arguments
+        .named("arguments")
+        .+ ~> FAssocApp.apply
+    }
+
     def Proj = rule {
       info ~ (CallExpr | SimpleExpr) ~ ('.' ~ ExprId).+ ~> FProj.apply
     }
 
+    def AssocProj = rule {
+      ExprId ~ "::" ~ ExprId
+    }
+
     def PrimaryExpr: Rule1[FInfixExpr] = rule {
-      MethodExpr | CallExpr | Proj | SimpleExpr
+      MethodExpr | AssocCallExpr | CallExpr | Proj | SimpleExpr
     }
 
     def MultiplicativeExpr = rule {

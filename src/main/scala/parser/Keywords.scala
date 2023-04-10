@@ -18,6 +18,7 @@ abstract class Keywords extends Parser {
   def `false` = Key("false")
   def `if` = Key("false")
   def `Unit` = Key("Unit")
+  def `self` = Key("self")
 
   def `for` = symbol("for")
   def `:` = symbol(':')
