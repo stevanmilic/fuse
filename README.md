@@ -17,7 +17,7 @@
 - [x] Code Generation to LLVM (without generics)
 - [x] Implement Type Inference for higher order types (Bidirectional)
 - [x] Implement Type Classes
-- [ ] Implement `do` notation
+- [x] Implement `do` notation
 - [ ] Code Generation to LLVM with monomorphisation
 - [ ] Add modules & imports
 
@@ -184,4 +184,18 @@ let f = a => a + 1
 let g = (x, y) => x + y
 
 let f_annotated: i32 = (a: i32) -> i32 => a + 1
+```
+
+
+## Do Notation
+
+```
+let x = Some(1)
+let y = Some(2)
+let z = Some(3)
+do:
+    i <- x
+    j <- y
+    k <- z
+    i + j + k
 ```

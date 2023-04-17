@@ -1031,6 +1031,321 @@ fun main() -> i32
     )
 
   }
+  test("check do expr") {
+    fuse("""
+trait Monad[A]:
+  fun unit[A](a: A) -> Self[A];
+
+  fun flat_map[B](self, f: A -> Self[B]) -> Self[B];
+
+  fun map[B](self, f: A -> B) -> Self[B]
+    self.flat_map(a => Self::unit(f(a)))
+
+type Option[T]:
+  Some(T)
+  None
+
+impl Monad for Option[A]:
+  fun unit[A](a: A) -> Option[A]
+    Some(a)
+
+  fun flat_map[B](self, f: A -> Option[B]) -> Option[B]
+    match self:
+      Some(v) => f(v)
+      _ => None
+
+fun main() -> i32
+  let x = Some(1)
+  let y = Some(2)
+  let z = Some(3)
+  let d = {
+    do:
+      i <- x
+      j <- y
+      k <- z
+      i + j + k
+  }
+  match d:
+    Some(v) => v
+    _ => 0
+        """)
+
+  }
+  test("check do expr invalid do expr") {
+    fuse(
+      """
+trait Monad[A]:
+  fun unit[A](a: A) -> Self[A];
+
+  fun flat_map[B](self, f: A -> Self[B]) -> Self[B];
+
+  fun map[B](self, f: A -> B) -> Self[B]
+    self.flat_map(a => Self::unit(f(a)))
+
+type Option[T]:
+  Some(T)
+  None
+
+impl Monad for Option[A]:
+  fun unit[A](a: A) -> Option[A]
+    Some(a)
+
+  fun flat_map[B](self, f: A -> Option[B]) -> Option[B]
+    match self:
+      Some(v) => f(v)
+      _ => None
+
+fun main() -> i32
+  let x = Some(1)
+  let y = Some(2)
+  let z = Some(3)
+  let d = {
+    do:
+      i <- x
+  }
+  match d:
+    Some(v) => v
+    _ => 0
+        """,
+      Some("yield expression not found")
+    )
+
+  }
+  test("check do expr yield expr not found") {
+    fuse(
+      """
+trait Monad[A]:
+  fun unit[A](a: A) -> Self[A];
+
+  fun flat_map[B](self, f: A -> Self[B]) -> Self[B];
+
+  fun map[B](self, f: A -> B) -> Self[B]
+    self.flat_map(a => Self::unit(f(a)))
+
+type Option[T]:
+  Some(T)
+  None
+
+impl Monad for Option[A]:
+  fun unit[A](a: A) -> Option[A]
+    Some(a)
+
+  fun flat_map[B](self, f: A -> Option[B]) -> Option[B]
+    match self:
+      Some(v) => f(v)
+      _ => None
+
+fun main() -> i32
+  let x = Some(1)
+  let y = Some(2)
+  let z = Some(3)
+  let d = {
+    do:
+      i <- x
+      j <- y
+      k <- z
+  }
+  match d:
+    Some(v) => v
+    _ => 0
+        """,
+      Some("yield expression not found")
+    )
+
+  }
+  test("check do expr missing assign expr expected") {
+    fuse(
+      """
+trait Monad[A]:
+  fun unit[A](a: A) -> Self[A];
+
+  fun flat_map[B](self, f: A -> Self[B]) -> Self[B];
+
+  fun map[B](self, f: A -> B) -> Self[B]
+    self.flat_map(a => Self::unit(f(a)))
+
+type Option[T]:
+  Some(T)
+  None
+
+impl Monad for Option[A]:
+  fun unit[A](a: A) -> Option[A]
+    Some(a)
+
+  fun flat_map[B](self, f: A -> Option[B]) -> Option[B]
+    match self:
+      Some(v) => f(v)
+      _ => None
+
+fun main() -> i32
+  let x = Some(1)
+  let y = Some(2)
+  let z = Some(3)
+  let d = {
+    do:
+      i <- x
+      j <- y
+      i + j
+      k <- z
+      i + j + k
+  }
+  match d:
+    Some(v) => v
+    _ => 0
+        """,
+      Some("assignment expression expected")
+    )
+
+  }
+  test("check do expr invalid primitive type") {
+    fuse(
+      """
+trait Monad[A]:
+  fun unit[A](a: A) -> Self[A];
+
+  fun flat_map[B](self, f: A -> Self[B]) -> Self[B];
+
+  fun map[B](self, f: A -> B) -> Self[B]
+    self.flat_map(a => Self::unit(f(a)))
+
+type Option[T]:
+  Some(T)
+  None
+
+impl Monad for Option[A]:
+  fun unit[A](a: A) -> Option[A]
+    Some(a)
+
+  fun flat_map[B](self, f: A -> Option[B]) -> Option[B]
+    match self:
+      Some(v) => f(v)
+      _ => None
+
+fun main() -> i32
+  let x = Some(1)
+  let y = Some(2)
+  let z = Some(3)
+  let d = {
+    do:
+      i <- x
+      g <- 7
+      j <- y
+      k <- z
+      i + j + k + g
+  }
+  match d:
+    Some(v) => v
+    _ => 0
+        """,
+      Some("`i32` isn't a data type")
+    )
+
+  }
+  test("check do expr invalid data type") {
+    fuse(
+      """
+trait Monad[A]:
+  fun unit[A](a: A) -> Self[A];
+
+  fun flat_map[B](self, f: A -> Self[B]) -> Self[B];
+
+  fun map[B](self, f: A -> B) -> Self[B]
+    self.flat_map(a => Self::unit(f(a)))
+
+type Option[T]:
+  Some(T)
+  None
+
+type Either[A, B]:
+    Right(A)
+    Left(B)
+
+impl Monad for Option[A]:
+  fun unit[A](a: A) -> Option[A]
+    Some(a)
+
+  fun flat_map[B](self, f: A -> Option[B]) -> Option[B]
+    match self:
+      Some(v) => f(v)
+      _ => None
+
+impl Monad for Either[A, B]:
+  fun unit[A](a: A) -> Either[A, A]
+    Right[A, A](a)
+
+  fun flat_map[C](self, f: A -> Either[C, B]) -> Either[C, B]
+    match self:
+      Right(v) => f(v)
+      Left(l) => Left(l)
+
+fun main() -> i32
+  let x = Some(1)
+  let y = Some(2)
+  let z = Some(3)
+  let g = Right(5)
+  let d = {
+    do:
+      i <- x
+      t <- g
+      j <- y
+      k <- z
+      i + j + k + t
+  }
+  match d:
+    Some(v) => v
+    _ => 0
+        """,
+      Some(
+        "expected type of `Right[{unknown}][{unknown}]`, found `Option[i32]`"
+      )
+    )
+
+  }
+  test("check do expr invalid primitive type in data type") {
+    fuse(
+      """
+trait Monad[A]:
+  fun unit[A](a: A) -> Self[A];
+
+  fun flat_map[B](self, f: A -> Self[B]) -> Self[B];
+
+  fun map[B](self, f: A -> B) -> Self[B]
+    self.flat_map(a => Self::unit(f(a)))
+
+type Option[T]:
+  Some(T)
+  None
+
+impl Monad for Option[A]:
+  fun unit[A](a: A) -> Option[A]
+    Some(a)
+
+  fun flat_map[B](self, f: A -> Option[B]) -> Option[B]
+    match self:
+      Some(v) => f(v)
+      _ => None
+
+fun main() -> i32
+  let x = Some(1)
+  let y = Some("2")
+  let z = Some(3)
+  let d = {
+    do:
+      i <- x
+      j <- y
+      k <- z
+      i + j + k
+  }
+  match d:
+    Some(v) => v
+    _ => 0
+        """,
+      Some(
+        "expected type of `i32`, found `str`"
+      )
+    )
+
+  }
 }
 
 object CompilerTests {

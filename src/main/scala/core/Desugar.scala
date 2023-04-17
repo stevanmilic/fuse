@@ -23,6 +23,8 @@ object Desugar {
   val RecordConstrPrefix = "%"
   val SelfTypeName = "Self"
   val SelfIdentifier = "self"
+  val FlatMapMethod = "flat_map"
+  val MapMethod = "map"
 
   // Patterns
   val AlphaNum = "[a-zA-Z0-9]+";
@@ -313,6 +315,11 @@ object Desugar {
             c.p.toList.traverse(p => Context.runE(toMatchCase(p, exprList)))
           })
         } yield TermMatch(info, me, mc.flatten)
+      case FDo(info, actions) =>
+        actions.toList match {
+          case actions :+ (last: FInfixExpr) => toFlatExpr(actions, last)
+          case _ => DesugarError.format(DoRequiresYieldExprDesugarError(info))
+        }
       case FProj(info, expr, projections) => toTermProj(info, expr, projections)
       case FMethodApp(info, proj, typeArgs, args) =>
         for {
@@ -508,6 +515,44 @@ object Desugar {
     case FUnit(info)            => EitherT.rightT(TermUnit(info))
     case _ => DesugarError.format(CaseNotSupportedDesugarError(p.info))
   }
+
+  def toFlatExpr(actions: List[FDoAction], body: FExpr): StateEither[Term] =
+    actions match {
+      case (h: FAssign) :: Nil => toMap(h, body)
+      case (a: FAssign) :: lactions =>
+        for {
+          ft <- withFlatMap(a)
+          fe <- toFlatExpr(lactions, body)
+        } yield ft(fe)
+      case (h: FInfixExpr) :: _ =>
+        DesugarError.format(DoExpectsAssignmentDesugarError((h: FExpr).info))
+      case Nil =>
+        DesugarError.format(DoExpectsAssignmentDesugarError(body.info))
+    }
+
+  def withFlatMap(assign: FAssign): StateEither[Term => Term] = for {
+    t1 <- toTermExpr(assign.e.toList)
+    v <- EitherT.liftF(Context.addName(assign.i.value))
+  } yield t2 => toMethodAppWithClosureArg(t1, FlatMapMethod, v, assign.info, t2)
+
+  def toMap(assign: FAssign, expr: FExpr): StateEither[Term] = for {
+    t1 <- toTermExpr(assign.e.toList)
+    v <- EitherT.liftF(Context.addName(assign.i.value))
+    t2 <- toTerm(expr)
+  } yield toMethodAppWithClosureArg(t1, MapMethod, v, assign.info, t2)
+
+  def toMethodAppWithClosureArg(
+      t1: Term,
+      method: String,
+      varName: String,
+      varInfo: Info,
+      t2: Term
+  ) =
+    TermApp(
+      t1.info,
+      TermApp(t1.info, TermMethodProj(t1.info, t1, method), t1),
+      TermClosure(varInfo, varName, None, t2)
+    )
 
   def toClassMethod(
       sig: FFuncSig,

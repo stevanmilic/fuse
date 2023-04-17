@@ -48,7 +48,15 @@ object Expressions {
   )
   case class FMatch(info: Info, e: FInfixExpr, c: Seq[FCase]) extends FExpr
 
-  sealed trait FInfixExpr extends FExpr
+  sealed trait FDoAction
+  case class FAssign(
+      info: Info,
+      i: FIdentifier,
+      e: Seq[FExpr]
+  ) extends FDoAction
+  case class FDo(info: Info, a: Seq[FDoAction]) extends FExpr
+
+  sealed trait FInfixExpr extends FExpr with FDoAction
   case class FAddition(lhs: FInfixExpr, rhs: FInfixExpr) extends FInfixExpr
   case class FSubtraction(lhs: FInfixExpr, rhs: FInfixExpr) extends FInfixExpr
   case class FMultiplication(lhs: FInfixExpr, rhs: FInfixExpr)
@@ -103,6 +111,7 @@ object Expressions {
     case FLetExpr(info, _, _, _)     => info
     case FAbs(info, _, _, _)         => info
     case FMatch(info, _, _)          => info
+    case FDo(info, _)                => info
     case FVar(info, _)               => info
     case FProj(info, _, _)           => info
     case FApp(info, _, _, _)         => info
@@ -151,6 +160,7 @@ abstract class Expressions(fileName: String) extends Types(fileName) {
     LetExpr.named("let expression") |
       LambdaExpr.named("lambda expression") |
       MatchExpr.named("match expression") |
+      DoExpr.named("do expression") |
       InfixExpr.named("infix expression")
   }
 
@@ -212,6 +222,19 @@ abstract class Expressions(fileName: String) extends Types(fileName) {
         Case,
         "case"
       ) ~> FMatch.apply
+    }
+  }
+
+  def DoExpr = {
+    def Assign = rule {
+      info ~ identifier ~ `<-` ~ InlineExpr ~> FAssign.apply
+    }
+    def Action = () =>
+      rule {
+        Assign | InfixExpr
+      }
+    rule {
+      info ~ `do` ~ ':' ~ oneOrMoreWithIndent(Action, "action") ~> FDo.apply
     }
   }
 

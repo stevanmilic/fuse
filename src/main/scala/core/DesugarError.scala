@@ -23,6 +23,8 @@ case class FunctionOperatorNotFoundDesugarError(info: Info, func: String)
 case class CaseNotSupportedDesugarError(info: Info) extends DesugarError
 case class NestedPatternNotSupportedDesugarError(info: Info)
     extends DesugarError
+case class DoRequiresYieldExprDesugarError(info: Info) extends DesugarError
+case class DoExpectsAssignmentDesugarError(info: Info) extends DesugarError
 
 object DesugarError {
   def format[T](error: DesugarError): StateEither[T] =
@@ -50,5 +52,9 @@ object DesugarError {
         consoleError("case not supported", info)
       case NestedPatternNotSupportedDesugarError(info) =>
         consoleError("nested pattern not supported", info)
+      case DoRequiresYieldExprDesugarError(info) =>
+        consoleError("yield expression not found", info)
+      case DoExpectsAssignmentDesugarError(info) =>
+        consoleError("assignment expression expected", info)
     })
 }
