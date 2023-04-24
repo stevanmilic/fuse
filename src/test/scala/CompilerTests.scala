@@ -41,6 +41,15 @@ fun main() -> i32
     0
         """)
   }
+  test("check unit functions") {
+    fuse("""
+fun greetings() -> Unit
+  print("Hello World")
+
+fun main() -> Unit
+  greetings()
+        """)
+  }
   test("check invalid record type addition") {
     fuse(
       """
@@ -121,7 +130,7 @@ impl List[A]:
             Nil => z
 
     fun map[B](self, f: A -> B) -> List[B]
-        List::foldRight(self, Nil[B](), (h, t) => Cons(f(h), t))
+        List::foldRight(self, Nil[B], (h, t) => Cons(f(h), t))
 
     fun map_2[B](self, f: A -> B) -> List[B]
         let iter = (acc, l) => {
@@ -129,7 +138,7 @@ impl List[A]:
                 Cons(h, t) => Cons(f(h), iter(acc, t))
                 Nil => acc
         }
-        iter(Nil[B](), self)
+        iter(Nil[B], self)
 
 fun main() -> Unit
     let l = Cons(2, Cons(3, Nil))
@@ -187,16 +196,16 @@ fun println(s: str) -> Unit
 
 fun type_of(t: Term) -> Option[Type]
     match t:
-        TermTrue => Some(TypeBool())
-        TermFalse => Some(TypeBool())
-        TermInt(i) => Some(TypeInt())
-        TermFloat(f) => Some(TypeFloat())
-        TermString(s) => Some(TypeString())
-        TermUnit => Some(TypeUnit())
+        TermTrue => Some(TypeBool)
+        TermFalse => Some(TypeBool)
+        TermInt(i) => Some(TypeInt)
+        TermFloat(f) => Some(TypeFloat)
+        TermString(s) => Some(TypeString)
+        TermUnit => Some(TypeUnit)
         _ => None
 
 fun is_type() -> bool
-    let ty = type_of(TermTrue())
+    let ty = type_of(TermTrue)
     ty.is_some()
 
 fun main() -> i32
@@ -224,7 +233,7 @@ type StateInt:
   run: i32 -> i32
 
 fun value(a: StateInt) -> i32
-  a.run(2)
+  (a.run)(2)
   
 fun main() -> i32
   value(StateInt(a => a + 1))
@@ -246,7 +255,7 @@ type StateInt:
   run: i32 -> Option[i32]
 
 fun value(a: StateInt) -> bool
-  let o = a.run(2)
+  let o = (a.run)(2)
   o.is_some()
   
 fun main() -> i32
@@ -264,7 +273,7 @@ type State[S, A]:
   run: S -> Tuple[A, S]
 
 fun value(a: State[i32, i32]) -> i32
-  let t = a.run(1)
+  let t = (a.run)(1)
   t.1 + t.2
   
 fun main() -> i32
@@ -459,7 +468,7 @@ fun main() -> i32
     let value = (a) => {
         match a:
             Cat(v) => v
-            Dog => None[str]()
+            Dog => None[str]
     }
     let v = value(Cat(Some("123")))
     match v:
@@ -485,7 +494,7 @@ fun main() -> i32
     let value = (a) => {
         match a:
             Cat(v) => v
-            Dog => None[str]()
+            Dog => None[str]
     }
     let v = value(Cat(Some("123")))
     let n = value(Cat(Some(123)))
@@ -523,7 +532,7 @@ fun main() -> i32
             Nil => acc
             Cons(h, t) => Cons(f(h), iter(t, acc))
     }
-    let v = iter(Cons(1, Nil), Nil[str]())
+    let v = iter(Cons(1, Nil), Nil[str])
     match v:
       Cons(_, _) => 0
       Nil => 1
@@ -914,8 +923,11 @@ impl State[S, A]:
   fun get[S]() -> State[S, S] 
     State((s: S) => Tuple(s, s))
 
+  fun exec(self, s: S) -> Tuple[A, S]
+    (self.run)(s)
+
   fun value(self, s: S) -> A
-    match self.run(s):
+    match self.exec(s):
       Tuple(v, _) => v
 
 impl Monad for State[S, A]:
@@ -925,8 +937,9 @@ impl Monad for State[S, A]:
 
   fun flat_map[B](self, f: A -> State[S, B]) -> State[S, B]
     let r = s => {
-      let v = self.run(s)
-      f(v.1).run(v.2)
+      let v = (self.run)(s)
+      # TODO: self.exec(s) gives wrong type here
+      f(v.1).exec(v.2)
     }
     State(r)
 
@@ -935,7 +948,6 @@ fun main() -> i32
   let s1 = s.flat_map(i => State(a => Tuple(a + i, i)))
   s1.value(2)
         """)
-
   }
   test("check generic traits monad + show with default implementation") {
     fuse("""
@@ -973,7 +985,6 @@ fun main() -> i32
     o.map(a => a + 1)
     0
         """)
-
   }
   test("check invalid type classes used for type param for different kinds") {
     fuse(
@@ -1344,6 +1355,51 @@ fun main() -> i32
         "expected type of `i32`, found `str`"
       )
     )
+
+  }
+  test("check io type") {
+    fuse("""
+trait Monad[A]:
+  fun unit[A](a: A) -> Self[A];
+
+  fun flat_map[B](self, f: A -> Self[B]) -> Self[B];
+
+  fun map[B](self, f: A -> B) -> Self[B]
+    self.flat_map(a => Self::unit(f(a)))
+
+type IO[A]:
+  run: () -> A
+
+impl IO[A]:
+  fun exec(self) -> A
+    (self.run)()
+
+impl Monad for IO[A]:
+  fun flat_map[B](self, f: A -> IO[B]) -> IO[B]
+    let r = _ => {
+      let b = f(self.exec())
+      b.exec()
+    }
+    IO(r)
+
+  fun unit[A](a: A) -> IO[A]
+    let r = _ => a
+    IO[A](r)
+
+
+fun printline(s: str) -> IO[Unit]
+  IO(_ => print(s))
+
+fun greetings() -> IO[Unit]
+  do:
+    h <- printline("Hello")
+    s <- printline(" ")
+    v <- printline("World!")
+    ()
+
+fun main() -> Unit
+  greetings().exec()
+        """)
 
   }
 }

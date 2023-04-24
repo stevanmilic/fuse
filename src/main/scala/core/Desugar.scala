@@ -292,20 +292,8 @@ object Desugar {
       case FApp(info, e, typeArgs, args) =>
         for {
           exprTerm <- toTerm(e)
-          typedTerm <- typeArgs
-            .getOrElse(Seq())
-            .toList
-            .traverse(toType(_))
-            .map(
-              _.foldLeft(exprTerm)((term, ty) => TermTApp(term.info, term, ty))
-            )
-          computedTerm <- args.toList.flatten.flatten
-            .traverse(toTerm(_))
-            .map(
-              _.foldLeft(typedTerm)((term, arg) =>
-                TermApp(term.info, term, arg)
-              )
-            )
+          typedTerm <- toTermTApp(exprTerm, typeArgs)
+          computedTerm <- toTermApp(typedTerm, args)
         } yield computedTerm
       case FMatch(info, e, cases) =>
         for {
@@ -325,45 +313,16 @@ object Desugar {
         for {
           termProj <- toTermProj(info, proj.e, proj.ids.tail)
           methodProj = TermMethodProj(info, termProj, proj.ids.head.value)
-          typedTerm <- typeArgs
-            .getOrElse(Seq())
-            .toList
-            .traverse(toType(_))
-            .map(
-              _.foldLeft(methodProj: Term)((term, ty) =>
-                TermTApp(info, term, ty)
-              )
-            )
-          // TODO: Should we always apply self here? :thinking:
+          typedTerm <- toTermTApp(methodProj, typeArgs)
           withImplicitSelf = TermApp(info, typedTerm, methodProj.t)
-          computedTerm <- args.toList.flatten.flatten
-            .traverse(toTerm(_))
-            .map(
-              _.foldLeft(withImplicitSelf)((term, arg) =>
-                TermApp(info, term, arg)
-              )
-            )
+          computedTerm <- toTermApp(withImplicitSelf, args, applyUnit = false)
         } yield computedTerm
       case FAssocApp(info, t, i, typeArgs, args) =>
         for {
           ty <- toTypeVar(t.info, t.value)
           assocProj = TermAssocProj(info, ty, i.value)
-          typedTerm <- typeArgs
-            .getOrElse(Seq())
-            .toList
-            .traverse(toType(_))
-            .map(
-              _.foldLeft(assocProj: Term)((term, ty) =>
-                TermTApp(info, term, ty)
-              )
-            )
-          computedTerm <- args.toList.flatten.flatten
-            .traverse(toTerm(_))
-            .map(
-              _.foldLeft(typedTerm)((term, arg) =>
-                TermApp(term.info, term, arg)
-              )
-            )
+          typedTerm <- toTermTApp(assocProj, typeArgs)
+          computedTerm <- toTermApp(typedTerm, args)
         } yield computedTerm
       case a: FAbs => toClosure(a, letVariable)
       case FMultiplication(i1, i2) =>
@@ -461,6 +420,32 @@ object Desugar {
     // NOTE: The abstraction is wrapped with a fix combinator to implement
     // recursion.
   } yield TermFix(info, TermAbs(info, variable, ty, term))
+
+  def toTermTApp(term: Term, typeArgs: FTypeArguments): StateEither[Term] =
+    typeArgs
+      .getOrElse(Seq())
+      .toList
+      .traverse(toType(_))
+      .map(
+        _.foldLeft(term)((term, ty) => TermTApp(term.info, term, ty))
+      )
+
+  def toTermApp(
+      term: Term,
+      args: Seq[FArguments],
+      applyUnit: Boolean = true
+  ): StateEither[Term] =
+    args.toList.sequence.map(_.flatten) match {
+      case Some(l) =>
+        l.traverse(toTerm(_))
+          .map(
+            _.foldLeft(term)((term, arg) => TermApp(term.info, term, arg))
+          )
+      case None if applyUnit =>
+        TermApp(term.info, term, TermUnit(term.info))
+          .pure[StateEither]
+      case _ => term.pure[StateEither]
+    }
 
   def toTermOperator(
       func: String,

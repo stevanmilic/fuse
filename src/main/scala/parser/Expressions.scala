@@ -251,7 +251,7 @@ abstract class Expressions(fileName: String) extends Types(fileName) {
     def CallExpr = rule {
       info ~ SimpleExpr ~ TypeArguments.named("type arguments").? ~ Arguments
         .named("arguments")
-        .+ ~> FApp.apply
+        .* ~> FApp.apply
     }
 
     def MethodExpr = rule {
@@ -275,7 +275,7 @@ abstract class Expressions(fileName: String) extends Types(fileName) {
     }
 
     def PrimaryExpr: Rule1[FInfixExpr] = rule {
-      MethodExpr | AssocCallExpr | CallExpr | Proj | SimpleExpr
+      MethodExpr | AssocCallExpr | Proj | CallExpr | SimpleExpr
     }
 
     def MultiplicativeExpr = rule {

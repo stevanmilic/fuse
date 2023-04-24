@@ -154,14 +154,7 @@ object TypeChecker {
         typeBounds <- EitherT.liftF(
           getTypeBounds(rootTypeVarOption.getOrElse(tyS))
         )
-        assocMethodType <-
-          (tyS, rootTypeVarOption, typeBounds) match {
-            case (_: TypeRec | _: TypeAbs, Some(rootTypeVar), _) =>
-              getTypeMethod(info, ty, rootTypeVar, method)
-            case (_: TypeVar | _: TypeApp, _, cls) =>
-              inferTypeClassMethod(info, method, cls, tyS)
-            case _ => TypeError.format(NoMethodsOnTypeError(info, tyS))
-          }
+        assocMethodType <- inferMethod(ty, tyS, typeBounds, method, info)
       } yield assocMethodType
     case TermFix(info, t1) =>
       for {
@@ -329,20 +322,7 @@ object TypeChecker {
       info: Info
   ): StateEither[Type] =
     (simplifiedType, findRootTypeVar(ty), typeBounds) match {
-      // NOTE: Check if the method is on the record field first.
-      case (TypeRec(_, _, _, TypeRecord(_, fields)), _, _) if fields.exists {
-            case (f, _) => f == method
-          } =>
-        fields
-          .find { case (f, _) => f == method }
-          .map { case (_, ty) =>
-            // TODO: Because methods have an implicit `self` parameter, we
-            // just skip it (proxy) for record's functions.
-            TypeArrow(ty.info, TypeAny(ty.info), typeShift(-1, ty))
-              .pure[StateEither]
-          }
-          .get
-      case (_: TypeRec, Some(rootTypeVar), _) =>
+      case (_: TypeRec | _: TypeAbs, Some(rootTypeVar), _) =>
         getTypeMethod(info, ty, rootTypeVar, method)
       case (_: TypeVar | _: TypeApp, _, cls) =>
         inferTypeClassMethod(info, method, cls, simplifiedType)
