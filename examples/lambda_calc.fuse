@@ -46,16 +46,16 @@ fun println(s: str) -> Unit
 
 fun type_of(t: Term) -> Option[Type]
     match t:
-        TermTrue => Some(TypeBool())
-        TermFalse => Some(TypeBool())
-        TermInt(i) => Some(TypeInt())
-        TermFloat(f) => Some(TypeFloat())
-        TermString(s) => Some(TypeString())
-        TermUnit => Some(TypeUnit())
+        TermTrue => Some(TypeBool)
+        TermFalse => Some(TypeBool)
+        TermInt(i) => Some(TypeInt)
+        TermFloat(f) => Some(TypeFloat)
+        TermString(s) => Some(TypeString)
+        TermUnit => Some(TypeUnit)
         _ => None
 
 fun is_type() -> bool
-    let ty = type_of(TermTrue())
+    let ty = type_of(TermTrue)
     ty.is_some()
 
 fun main() -> i32

@@ -887,5 +887,4 @@ object Desugar {
     Context.nameToIndex(ctx, i).orElse(Context.nameToIndex(ctx, toRecId(i)))
 
   def toRecId(i: String) = s"@$i"
-
 }

@@ -9,7 +9,7 @@ impl List[A]:
             Nil => z
 
     fun map[B](self, f: A -> B) -> List[B]
-        List::foldRight(self, Nil[B](), (h, t) => Cons(f(h), t))
+        List::foldRight(self, Nil[B], (h, t) => Cons(f(h), t))
 
     fun map_2[B](self, f: A -> B) -> List[B]
         let iter = (acc, l) => {
@@ -17,7 +17,7 @@ impl List[A]:
                 Cons(h, t) => Cons(f(h), iter(acc, t))
                 Nil => acc
         }
-        iter(Nil[B](), self)
+        iter(Nil[B], self)
 
 fun main() -> Unit
     let l = Cons(2, Cons(3, Nil))
