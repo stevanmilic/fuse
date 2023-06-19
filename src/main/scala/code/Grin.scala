@@ -192,7 +192,8 @@ object Grin {
       binding: Bind
   ): ContextState[Option[(List[LambdaBinding], List[PartialFunValue])]] =
     binding.b match {
-      case TermAbbBind(expr: TermBuiltin, _) => State.pure(None)
+      case TermAbbBind(expr: (TermBuiltin | TermClassMethod), _) =>
+        State.pure(None)
       case TermAbbBind(expr, _) =>
         pureToExpr(expr).map(e => {
           val partialFun = extractPartialFun(e)

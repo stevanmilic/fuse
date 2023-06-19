@@ -3,9 +3,42 @@ package fuse
 import munit.*
 import scala.concurrent.duration.Duration
 
-class CompilerTests extends munit.FunSuite {
+class CompilerTests extends FunSuite {
   import CompilerTests.*
   override val munitTimeout = Duration(10, "m")
+
+  /** Asserts fuse code is type checked. */
+  def fuse(code: String, expected: Output = CheckOutput(None)) =
+    expected match {
+      case CheckOutput(s) => assertCheck(code, s)
+      case BuildOutput(s) => assertBuild(code, s)
+    }
+
+  def assertCheck(code: String, expectedError: Option[String]) =
+    (check(code), expectedError) match {
+      case (t, None) => assert(t.isRight, s"\n${t.merge}")
+      case (t, Some(error)) if t.isLeft =>
+        assert(t.merge.contains(error), s"\n${error} not in:\n${t.merge}")
+      case (_, Some(error)) =>
+        assert(false, s"\ncheck passed, error not thrown: '${error}'")
+    }
+
+  def assertBuild(code: String, expectedGrinCode: String) =
+    build(code) match {
+      case Right(grinCode) =>
+        assertNoDiff(
+          grinCode,
+          expectedGrinCode,
+          "expected GRIN code isn't equal"
+        )
+      case Left(error) =>
+        assert(false, s"\nfailed to compile due to error: '${error}'")
+    }
+
+}
+
+class CompilerCheckTests extends CompilerTests {
+  import CompilerTests.*
 
   test("check integer addition") {
     fuse("""
@@ -25,7 +58,7 @@ fun main() -> i32
 fun main() -> i32
     2 + "2"
         """,
-      Some("expected type of `i32`, found `str`")
+      CheckOutput(Some("expected type of `i32`, found `str`"))
     )
   }
   test("check float addition") {
@@ -61,7 +94,9 @@ fun main() -> i32
     let s = Point(0, 0) + Point(1, 1)
     0
         """,
-      Some("expected one of types `{str, f32, i32}`, found `Point`")
+      CheckOutput(
+        Some("expected one of types `{str, f32, i32}`, found `Point`")
+      )
     )
   }
   test("check generic option") {
@@ -315,7 +350,7 @@ fun main() -> i32
     let value = (a) => a + 1
     value("2")
         """,
-      Some("expected type of `i32`, found `str`")
+      CheckOutput(Some("expected type of `i32`, found `str`"))
     )
   }
   test("check inline lambda type inference with two variables invalid param") {
@@ -325,7 +360,7 @@ fun main() -> i32
     let value = (a, b) => a + b + 2
     value("1", 2)
         """,
-      Some("expected type of `i32`, found `str`")
+      CheckOutput(Some("expected type of `i32`, found `str`"))
     )
   }
   test("check inline lambda type inference with invalid record type addition") {
@@ -340,7 +375,9 @@ fun main() -> i32
     value(Point(1, 2))
     0
         """,
-      Some("expected one of types `{str, f32, i32}`, found `Point`")
+      CheckOutput(
+        Some("expected one of types `{str, f32, i32}`, found `Point`")
+      )
     )
   }
   test(
@@ -357,7 +394,9 @@ fun main() -> i32
     value(Point(1, 2))
     0
         """,
-      Some("expected one of types `{str, f32, i32}`, found `Point`")
+      CheckOutput(
+        Some("expected one of types `{str, f32, i32}`, found `Point`")
+      )
     )
   }
   test("check closure inference with match statement for primitive type") {
@@ -432,7 +471,7 @@ fun main() -> i32
     }
     value(123)
         """,
-      Some("expected type of `Option[i32]`, found `i32`")
+      CheckOutput(Some("expected type of `Option[i32]`, found `i32`"))
     )
   }
   test("check closure inference with match statement for invalid generic arg") {
@@ -450,7 +489,7 @@ fun main() -> i32
     }
     value(Some("123"))
         """,
-      Some("expected type of `Option[i32]`, found `Option[str]`")
+      CheckOutput(Some("expected type of `Option[i32]`, found `Option[str]`"))
     )
   }
   test("check closure inference with match statement for nested option type") {
@@ -499,8 +538,10 @@ fun main() -> i32
     let v = value(Cat(Some("123")))
     let n = value(Cat(Some(123)))
         """,
-      Some(
-        "expected type of `Animal[Option[str]]`, found `Animal[Option[i32]]`"
+      CheckOutput(
+        Some(
+          "expected type of `Animal[Option[str]]`, found `Animal[Option[i32]]`"
+        )
       )
     )
   }
@@ -558,7 +599,11 @@ fun main() -> i32
       Cons(_, _) => 0
       Nil => 1
         """,
-      Some("can't determine the type of variable, type annotation is required")
+      CheckOutput(
+        Some(
+          "can't determine the type of variable, type annotation is required"
+        )
+      )
     )
   }
   test("check inference with match statement for either type") {
@@ -594,9 +639,7 @@ fun main() -> i32
     let r = value(Right("123"))
     let l = value(Left(123))
         """,
-      Some(
-        "expected type of `Either[str][str]`"
-      )
+      CheckOutput(Some("expected type of `Either[str][str]`"))
     )
   }
   test("check simple trait") {
@@ -642,7 +685,9 @@ fun add[T: Add](a: T, b: T) -> T
 fun main() -> i32
   add(true, 3)
         """,
-      Some("expected one of types `{str, f32, i32}`, found `bool` type")
+      CheckOutput(
+        Some("expected one of types `{str, f32, i32}`, found `bool` type")
+      )
     )
 
   }
@@ -658,7 +703,7 @@ fun notify[T: Add](s: T) -> Unit
 fun main() -> i32
     0
         """,
-      Some("`summarize` method not found in `Add` type")
+      CheckOutput(Some("`summarize` method not found in `Add` type"))
     )
 
   }
@@ -683,7 +728,7 @@ fun main() -> i32
     notify(5)
     0
         """,
-      Some("expected one of types `{Tweet}`, found `i32` type")
+      CheckOutput(Some("expected one of types `{Tweet}`, found `i32` type"))
     )
 
   }
@@ -702,8 +747,10 @@ fun notify[T: Summary + Collection](s: T) -> Unit
 fun main() -> i32
     0
         """,
-      Some(
-        "multiple `summarize` method implementations found for `{Summary, Collection}` bounds"
+      CheckOutput(
+        Some(
+          "multiple `summarize` method implementations found for `{Summary, Collection}` bounds"
+        )
       )
     )
 
@@ -726,8 +773,10 @@ fun main() -> i32
     notify(tweet)
     0
         """,
-      Some(
-        "expected type that implements `{Summary}` traits, found `Tweet` type"
+      CheckOutput(
+        Some(
+          "expected type that implements `{Summary}` traits, found `Tweet` type"
+        )
       )
     )
 
@@ -749,7 +798,7 @@ impl Summary for Tweet:
 fun main() -> i32
     0
         """,
-      Some(", found `Unit -> i32` for `summarize`")
+      CheckOutput(Some(", found `Unit -> i32` for `summarize`"))
     )
 
   }
@@ -773,7 +822,7 @@ impl Summary for Tweet:
 fun main() -> i32
     0
         """,
-      Some("`make` method not found in `Summary` type")
+      CheckOutput(Some("`make` method not found in `Summary` type"))
     )
 
   }
@@ -795,7 +844,7 @@ impl Summary for Tweet:
 fun main() -> i32
     0
         """,
-      Some("`{title}` methods not implemented for `Tweet` type")
+      CheckOutput(Some("`{title}` methods not implemented for `Tweet` type"))
     )
 
   }
@@ -872,8 +921,10 @@ fun main() -> i32
     o.map(a => a + 1)
     0
         """,
-      Some(
-        "expected `[Self::* -> *]: Functor, [A::*], [B::*] => Self[A] -> A -> B -> Self[B]`, found `[A::*], [B::*] => Option[A] -> A -> B -> Option[A]` for `map`"
+      CheckOutput(
+        Some(
+          "expected `[Self::* -> *]: Functor, [A::*], [B::*] => Self[A] -> A -> B -> Self[B]`, found `[A::*], [B::*] => Option[A] -> A -> B -> Option[A]` for `map`"
+        )
       )
     )
 
@@ -938,7 +989,6 @@ impl Monad for State[S, A]:
   fun flat_map[B](self, f: A -> State[S, B]) -> State[S, B]
     let r = s => {
       let v = (self.run)(s)
-      # TODO: self.exec(s) gives wrong type here
       f(v.1).exec(v.2)
     }
     State(r)
@@ -1001,7 +1051,7 @@ fun to_str[T: Summary + Show](s: T) -> str
 fun main() -> i32
     0
         """,
-      Some("`{Summary, Show}` type classes have different kinds")
+      CheckOutput(Some("`{Summary, Show}` type classes have different kinds"))
     )
 
   }
@@ -1020,8 +1070,10 @@ fun to_str[T: Summary + ShortSummary](s: T) -> str
 fun main() -> i32
     0
         """,
-      Some(
-        "multiple `summarize` method implementations found for `{Summary, ShortSummary}` bounds"
+      CheckOutput(
+        Some(
+          "multiple `summarize` method implementations found for `{Summary, ShortSummary}` bounds"
+        )
       )
     )
 
@@ -1038,7 +1090,7 @@ fun to_str[T: Show](s: T) -> str
 fun main() -> i32
     0
         """,
-      Some("`Show` type class not found")
+      CheckOutput(Some("`Show` type class not found"))
     )
 
   }
@@ -1118,7 +1170,7 @@ fun main() -> i32
     Some(v) => v
     _ => 0
         """,
-      Some("yield expression not found")
+      CheckOutput(Some("yield expression not found"))
     )
 
   }
@@ -1160,7 +1212,7 @@ fun main() -> i32
     Some(v) => v
     _ => 0
         """,
-      Some("yield expression not found")
+      CheckOutput(Some("yield expression not found"))
     )
 
   }
@@ -1204,7 +1256,7 @@ fun main() -> i32
     Some(v) => v
     _ => 0
         """,
-      Some("assignment expression expected")
+      CheckOutput(Some("assignment expression expected"))
     )
 
   }
@@ -1248,7 +1300,7 @@ fun main() -> i32
     Some(v) => v
     _ => 0
         """,
-      Some("`i32` isn't a data type")
+      CheckOutput(Some("`i32` isn't a data type"))
     )
 
   }
@@ -1306,8 +1358,10 @@ fun main() -> i32
     Some(v) => v
     _ => 0
         """,
-      Some(
-        "expected type of `Right[{unknown}][{unknown}]`, found `Option[i32]`"
+      CheckOutput(
+        Some(
+          "expected type of `Right[{unknown}][{unknown}]`, found `Option[i32]`"
+        )
       )
     )
 
@@ -1351,8 +1405,10 @@ fun main() -> i32
     Some(v) => v
     _ => 0
         """,
-      Some(
-        "expected type of `i32`, found `str`"
+      CheckOutput(
+        Some(
+          "expected type of `i32`, found `str`"
+        )
       )
     )
 
@@ -1386,7 +1442,6 @@ impl Monad for IO[A]:
     let r = _ => a
     IO[A](r)
 
-
 fun printline(s: str) -> IO[Unit]
   IO(_ => print(s))
 
@@ -1404,21 +1459,30 @@ fun main() -> Unit
   }
 }
 
-object CompilerTests {
+class CompilerBuildTests extends CompilerTests {
+  import CompilerTests.*
 
-  /** Asserts fuse code is type checked. */
-  def fuse(code: String, expectedError: Option[String] = None) = {
-    (check(code), expectedError) match {
-      case (t, None) => assert(t.isRight, s"\n${t.merge}")
-      case (t, Some(error)) if t.isLeft =>
-        assert(t.merge.contains(error), s"\n${error} not in:\n${t.merge}")
-      case (_, Some(error)) =>
-        assert(false, s"\ncheck passed, error not thrown: '${error}'")
-
-    }
-
+  test("build integer addition") {
+    fuse(
+      """
+fun main() -> i32
+    2 + 2
+    """,
+      BuildOutput("""
+grinMain _0 =
+ _prim_int_add 2 2""")
+    )
   }
+}
+
+object CompilerTests {
+  sealed trait Output
+  case class CheckOutput(s: Option[String]) extends Output
+  case class BuildOutput(s: String) extends Output
 
   def check(code: String, fileName: String = "test.fuse") =
     Compiler.compile(CheckFile(fileName), code.trim, fileName)
+
+  def build(code: String, fileName: String = "test.fuse") =
+    Compiler.compile(BuildFile(fileName), code.trim, fileName)
 }
