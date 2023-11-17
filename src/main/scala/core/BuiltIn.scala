@@ -16,7 +16,7 @@ object BuiltIn {
     buildBind(name, TermAbbBind(TermClassMethod(i, ty)))
 
   def buildClassBind(name: String): Bind =
-    buildBind("Add", TypeClassBind(KindStar))
+    buildBind(name, TypeClassBind(KindStar))
 
   def buildClassInstanceBind(
       name: String,
