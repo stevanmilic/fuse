@@ -1,6 +1,7 @@
 package core
 
 import parser.Info.*
+import core.Instantiations.Instantiation
 
 object Types {
   sealed trait Kind
@@ -221,5 +222,5 @@ object Bindings {
   case object TempVarBind extends Binding
 
 // Global bindings.
-  case class Bind(i: String, b: Binding)
+  case class Bind(i: String, b: Binding, insts: List[Instantiation] = List())
 }

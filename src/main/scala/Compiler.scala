@@ -17,6 +17,7 @@ import java.io.*
 import scala.util.Either
 import scala.util.Failure
 import scala.util.Success
+import code.Monomorphization
 
 object Compiler {
   def run(
@@ -48,7 +49,9 @@ object Compiler {
     b2 = BuiltIn.Binds ++ d
     bindings <- TypeChecker.run(b2)
     code <- command match {
-      case BuildFile(_) => Right(Grin.generate(bindings))
+      case BuildFile(_) =>
+        val monomorphicBindings = Monomorphization.replace(bindings)
+        Right(Grin.generate(monomorphicBindings))
       case CheckFile(_) =>
         Representation.typeRepresentation(bindings).map(_.mkString("\n"))
     }

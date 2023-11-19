@@ -350,17 +350,26 @@ object Context {
     })
   } yield (ty1, ty2, ty)
 
+  /** Replaces existential variable at specified index with existential type
+    * solution binding.
+    *
+    * @return
+    *   modifies the input state and returns the existential type binding
+    *   passed.
+    */
   def replaceEVar(
       idx: Integer,
       eA: TypeEVar,
       m: TypeESolutionBind
-  ): ContextState[Unit] =
-    State.modify { (ctx: Context) =>
-      (
-        getNotes(ctx, withMarks = true).toList.updated(idx, (eA.name, m)),
-        ctx._2
-      )
-    }
+  ): ContextState[TypeESolutionBind] =
+    State
+      .modify { (ctx: Context) =>
+        (
+          getNotes(ctx, withMarks = true).toList.updated(idx, (eA.name, m)),
+          ctx._2
+        )
+      }
+      .map(_ => m)
 
   def getFreeEVarIndex(
       eA: TypeEVar

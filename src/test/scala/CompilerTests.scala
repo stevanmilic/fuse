@@ -1462,6 +1462,55 @@ fun main() -> Unit
 class CompilerBuildTests extends CompilerTests {
   import CompilerTests.*
 
+  test("build unit function") {
+    fuse(
+      """
+fun greetings() -> Unit
+  print("Hello World")
+
+fun main() -> Unit
+  greetings()
+    """,
+      BuildOutput("""
+greetings _0 =
+ _prim_string_print #"Hello World"
+
+grinMain _1 =
+ greetings 0""")
+    )
+  }
+  test("build simple sum type") {
+    fuse(
+      """
+type Animal:
+  Dog
+  Cat
+
+fun value(a: Animal) -> i32
+  match a:
+      Dog => 0
+      Cat => 1
+
+fun main() -> i32
+    value(Dog)
+        """,
+      BuildOutput("""
+Dog =  pure  (CDog)
+
+Cat =  pure  (CCat)
+
+value a0 =
+ case a0 of
+  (CDog ) ->
+   pure 0
+  (CCat ) ->
+   pure 1
+
+grinMain _2 =
+ p4 <- Dog
+ value p4""")
+    )
+  }
   test("build integer addition") {
     fuse(
       """
@@ -1471,6 +1520,35 @@ fun main() -> i32
       BuildOutput("""
 grinMain _0 =
  _prim_int_add 2 2""")
+    )
+  }
+  test("build generic function") {
+    fuse(
+      """
+fun identity[T](v: T) -> T
+    v
+
+fun main() -> Unit
+    let s = identity("Hello World")
+    print(s)
+        """,
+      BuildOutput("")
+    )
+  }
+  test("build generic constructor") {
+    fuse(
+      """
+type Option[A]:
+    None
+    Some(A)
+
+fun main() -> i32
+    let o = Some(5)
+    match o:
+        Some(v) => 0
+        None => 1
+        """,
+      BuildOutput("")
     )
   }
 }

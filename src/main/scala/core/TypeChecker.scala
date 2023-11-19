@@ -17,6 +17,7 @@ import parser.Info.ShowInfo.*
 import scala.annotation.tailrec
 import scala.util.*
 import fuse.Utils.*
+import core.Instantiations.Instantiation
 
 object TypeChecker {
   val MainFunction = "main"
@@ -24,17 +25,17 @@ object TypeChecker {
   def run(binds: List[Bind]): Either[Error, List[Bind]] =
     checkBindings(binds).value.runEmptyA.value
 
-  def checkBindings(binds: List[Bind]): StateEither[List[Bind]] =
+  def checkBindings(
+      binds: List[Bind]
+  ): StateEither[List[Bind]] =
     binds
       .traverse(bind =>
         for {
-          binding <- checkBinding(bind.b)
+          (binding, insts) <- checkBinding(bind.b)
           _ <- checkTypeInstanceMethodBinding(bind.i, binding)
           _ <- checkTypeInstance(bind.i, binding)
-          id <- EitherT.liftF[ContextState, Error, String](
-            addBinding(bind.i, binding)
-          )
-        } yield Bind(id, binding)
+          id <- EitherT.liftF(addBinding(bind.i, binding))
+        } yield Bind(id, binding, insts)
       )
       .flatMap(binds =>
         binds.exists { bind => bind.i == MainFunction } match {
@@ -43,198 +44,222 @@ object TypeChecker {
         }
       )
 
-  def checkBinding(b: Binding): StateEither[Binding] = b match {
-    case NameBind              => EitherT.rightT(NameBind)
-    case t @ TypeVarBind(_, _) => EitherT.rightT(t)
-    case v @ VarBind(_)        => EitherT.rightT(v)
+  def checkBinding(
+      b: Binding
+  ): StateEither[(Binding, List[Instantiation])] = b match {
+    case NameBind              => EitherT.rightT((NameBind, Nil))
+    case t @ TypeVarBind(_, _) => EitherT.rightT((t, Nil))
+    case v @ VarBind(_)        => EitherT.rightT((v, Nil))
     case TypeAbbBind(ty, None) =>
-      pureKindOf(ty).map(k => TypeAbbBind(ty, Some(k)))
+      pureKindOf(ty).map(k => (TypeAbbBind(ty, Some(k)), Nil))
     case TermAbbBind(term, None) =>
-      pureInfer(term).map(ty => TermAbbBind(term, Some(ty)))
-    case _ => EitherT.rightT(b)
+      pureInfer(term).map((ty, insts) => (TermAbbBind(term, Some(ty)), insts))
+    case _ => EitherT.rightT(b, Nil)
   }
 
-  def pureInfer(t: Term): StateEither[Type] = for {
+  def pureInfer(t: Term): StateEither[(Type, List[Instantiation])] = for {
     m <- EitherT.liftF(addMark("p"))
-    iT <- infer(t)
+    (iT, insts) <- infer(t)
     aT <- apply(iT)(shift = false)
     _ <- EitherT.liftF(peel(m))
-  } yield aT
+  } yield (aT, insts)
 
   /** Infers a type for `exp` with input context `ctx`.
     * @return
     *   the inferred type and the output context.
     */
-  def infer(exp: Term): StateEither[Type] = exp match {
-    case TermAscribe(info, t1, typeToAscribe) =>
-      for {
-        _ <- checkKindStar(typeToAscribe)
-        tyT1 <- pureInfer(t1)
-        t <- isSubtypeWithTypeError(
-          tyT1,
-          typeToAscribe,
-          AscribeWrongTypeError(
-            info,
+  def infer(exp: Term): StateEither[(Type, List[Instantiation])] =
+    exp match {
+      case TermAscribe(info, t1, typeToAscribe) =>
+        for {
+          _ <- checkKindStar(typeToAscribe)
+          (tyT1, insts) <- pureInfer(t1)
+          t <- isSubtypeWithTypeError(
             tyT1,
-            typeToAscribe
-          )
-        )
-      } yield t
-    case TermVar(info, idx, _) => Context.getType(info, idx)
-    case TermClosure(info, variable, Some(variableType), expr) =>
-      for {
-        _ <- checkKindStar(variableType)
-        _ <- EitherT.liftF(Context.addBinding(variable, VarBind(variableType)))
-        tyT2 <- pureInfer(expr)
-      } yield TypeArrow(info, variableType, typeShift(-1, tyT2))
-    case TermClosure(info, variable, None, expr) =>
-      for {
-        eA <- EitherT.liftF(addEVar("a", info, TypeEFreeBind))
-        eC <- EitherT.liftF(addEVar("c", info, TypeEFreeBind))
-        b <- EitherT.liftF(addBinding(variable, VarBind(eA)))
-        result <- check(expr, eC)
-        eAS <- apply(eA)(shift = true)
-        _ <- EitherT.liftF(peel(b))
-        eAS1 <- EitherT.liftF(typeShiftOnContextDiff(eAS))
-        eCS <- apply(eC)(shift = true)
-      } yield TypeArrow(info, eAS1, typeShift(-1, eCS))
-    case TermAbs(info, variable, variableType, expr, returnType) =>
-      for {
-        _ <- checkKindStar(variableType)
-        _ <- EitherT.liftF(Context.addBinding(variable, VarBind(variableType)))
-        exprType <- pureInfer(expr)
-        shiftedExprType <- EitherT.liftF(typeShiftOnContextDiff(exprType))
-        _ <- returnType match {
-          case Some(ty) =>
-            isSubtypeWithTypeError(
-              ty,
-              shiftedExprType,
-              WrongReturnTypeError(ty.info, shiftedExprType, ty)
+            typeToAscribe,
+            AscribeWrongTypeError(
+              info,
+              tyT1,
+              typeToAscribe
             )
-          case _ => ().pure[StateEither]
-        }
-      } yield TypeArrow(info, variableType, typeShift(-1, shiftedExprType))
-    case TermApp(info, fun, arg) =>
-      for {
-        funType <- infer(fun)
-        simplifiedFun <- EitherT.liftF(simplifyType(funType))
-        ty <- inferApp(simplifiedFun, arg)
-      } yield ty
-    case TermProj(info, ty, label) =>
-      for {
-        tyT1 <- pureInfer(ty)
-        tyT1S <- EitherT.liftF(simplifyType(tyT1))
-        fieldType <- tyT1S match {
-          case TypeRec(_, _, _, TypeRecord(_, fields)) =>
-            fields
-              .find { case (f, _) => f == label }
-              .map { case (_, ty) => typeShift(-1, ty).pure[StateEither] }
-              .getOrElse(
-                TypeError.format(
-                  FieldNotFoundTypeError(info, tyT1, label)
+          )
+        } yield (t, insts)
+      case TermVar(info, idx, _) => Context.getType(info, idx).map((_, Nil))
+      case TermClosure(info, variable, Some(variableType), expr) =>
+        for {
+          _ <- checkKindStar(variableType)
+          _ <- EitherT.liftF(
+            Context.addBinding(variable, VarBind(variableType))
+          )
+          (tyT2, insts) <- pureInfer(expr)
+        } yield (TypeArrow(info, variableType, typeShift(-1, tyT2)), insts)
+      case TermClosure(info, variable, None, expr) =>
+        for {
+          eA <- EitherT.liftF(addEVar("a", info, TypeEFreeBind))
+          eC <- EitherT.liftF(addEVar("c", info, TypeEFreeBind))
+          b <- EitherT.liftF(addBinding(variable, VarBind(eA)))
+          (insts, _) <- check(expr, eC)
+          eAS <- apply(eA)(shift = true)
+          _ <- EitherT.liftF(peel(b))
+          eAS1 <- EitherT.liftF(typeShiftOnContextDiff(eAS))
+          eCS <- apply(eC)(shift = true)
+        } yield (TypeArrow(info, eAS1, typeShift(-1, eCS)), insts)
+      case TermAbs(info, variable, variableType, expr, returnType) =>
+        for {
+          _ <- checkKindStar(variableType)
+          _ <- EitherT.liftF(
+            Context.addBinding(variable, VarBind(variableType))
+          )
+          (exprType, insts) <- pureInfer(expr)
+          shiftedExprType <- EitherT.liftF(typeShiftOnContextDiff(exprType))
+          _ <- returnType match {
+            case Some(ty) =>
+              isSubtypeWithTypeError(
+                ty,
+                shiftedExprType,
+                WrongReturnTypeError(ty.info, shiftedExprType, ty)
+              )
+            case _ => ().pure[StateEither]
+          }
+        } yield (
+          TypeArrow(info, variableType, typeShift(-1, shiftedExprType)),
+          insts
+        )
+      case TermApp(info, fun, arg) =>
+        for {
+          (funType, insts) <- infer(fun)
+          simplifiedFun <- EitherT.liftF(simplifyType(funType))
+          (ty, solutions) <- inferApp(simplifiedFun, arg)
+          inst <- Instantiations.build(fun, solutions)
+        } yield (ty, insts ::: inst)
+      case TermProj(info, ty, label) =>
+        for {
+          (tyT1, insts) <- pureInfer(ty)
+          tyT1S <- EitherT.liftF(simplifyType(tyT1))
+          fieldType <- tyT1S match {
+            case TypeRec(_, _, _, TypeRecord(_, fields)) =>
+              fields
+                .find { case (f, _) => f == label }
+                .map { case (_, ty) => typeShift(-1, ty).pure[StateEither] }
+                .getOrElse(
+                  TypeError.format(
+                    FieldNotFoundTypeError(info, tyT1, label)
+                  )
+                )
+            case _ => TypeError.format(NoFieldsOnTypeError(info, tyT1))
+          }
+        } yield (fieldType, insts)
+      case TermMethodProj(info, term, method) =>
+        for {
+          (tyT1, insts) <- pureInfer(term)
+          tyT1S <- EitherT.liftF(simplifyType(tyT1))
+          rootTypeVarOption = findRootTypeVar(tyT1)
+          typeBounds <- EitherT.liftF(
+            getTypeBounds(rootTypeVarOption.getOrElse(tyT1S))
+          )
+          // TODO: Here we gotta build the instantion.
+          methodType <- inferMethod(tyT1, tyT1S, typeBounds, method, info)
+        } yield (methodType, insts)
+      case TermAssocProj(info, ty, method) =>
+        for {
+          tyS <- EitherT.liftF(simplifyType(ty))
+          rootTypeVarOption = findRootTypeVar(ty)
+          typeBounds <- EitherT.liftF(
+            getTypeBounds(rootTypeVarOption.getOrElse(tyS))
+          )
+          assocMethodType <- inferMethod(ty, tyS, typeBounds, method, info)
+        } yield (assocMethodType, Nil)
+      case TermFix(info, t1) =>
+        for {
+          (tyT1, insts) <- infer(t1)
+          tyT1S <- EitherT.liftF(simplifyType(tyT1))
+          bodyType <- tyT1S match {
+            case TypeArrow(_, tyT11, tyT12) => tyT12.pure[StateEither]
+            case _ =>
+              TypeError.format(InvalidFunctionTypeError(info, tyT1S))
+          }
+        } yield (bodyType, insts)
+      case TermRecord(info, fields) =>
+        fields
+          .traverse { case (v, term) =>
+            pureInfer(term).map { case (t, insts) => ((v, t), insts) }
+          }
+          .map(v =>
+            val (r, insts) = v.unzip
+            (TypeRecord(info, r), insts.flatten)
+          )
+      case TermFold(info, tyS) =>
+        EitherT
+          .liftF(simplifyType(tyS))
+          .flatMap(_ match {
+            case TypeRec(_, _, _, tyT) =>
+              (
+                TypeArrow(info, typeSubstituteTop(tyS, tyT), tyS): Type,
+                Nil
+              ).pure
+            case _ =>
+              TypeError.format(InvalidFoldForRecursiveTypeError(info, tyS))
+          })
+      case TermLet(_, variable, t1, t2) =>
+        for {
+          (tyT1, sol1) <- infer(t1)
+          _ <- EitherT.liftF(addBinding(variable, VarBind(tyT1)))
+          (tyT2, sol2) <- pureInfer(t2)
+        } yield (typeShift(-1, tyT2), sol1 ::: sol2)
+      case TermTAbs(info, v, cls, t) =>
+        for {
+          typeClassKinds <- cls.traverse(getTypeClassKind(_))
+          kind = typeClassKinds.headOption.getOrElse(KindStar)
+          _ <- EitherT.liftF(addBinding(v, TypeVarBind(kind, cls)))
+          _ <- typeClassKinds.forall(_ == kind) match {
+            case false =>
+              TypeError.format(KindTypeClassMismatchTypeError(info, cls))
+            case true => ().pure[StateEither]
+          }
+          ty <- pureInfer(t).map { case (t, insts) =>
+            (TypeAll(info, v, kind, cls, t), insts)
+          }
+        } yield ty
+      case TermTApp(info, expr, ty2) =>
+        for {
+          k2 <- kindOf(ty2)
+          (ty1, insts) <- pureInfer(expr)
+          tyT1 <- EitherT.liftF(simplifyType(ty1))
+          ty <- tyT1 match {
+            case TypeAll(_, _, k1, _, tyT2) =>
+              typeErrorEitherCond(
+                k1 == k2,
+                typeSubstituteTop(ty2, tyT2),
+                InvalidTypeArgumentTypeError(ty2.info, ty2)
+              )
+            case _ =>
+              TypeError.format(
+                TypeArgumentsNotAllowedTypeError(
+                  ty2.info,
+                  tyT1
                 )
               )
-          case _ => TypeError.format(NoFieldsOnTypeError(info, tyT1))
-        }
-      } yield fieldType
-    case TermMethodProj(info, term, method) =>
-      for {
-        tyT1 <- pureInfer(term)
-        tyT1S <- EitherT.liftF(simplifyType(tyT1))
-        rootTypeVarOption = findRootTypeVar(tyT1)
-        typeBounds <- EitherT.liftF(
-          getTypeBounds(rootTypeVarOption.getOrElse(tyT1S))
-        )
-        methodType <- inferMethod(tyT1, tyT1S, typeBounds, method, info)
-      } yield methodType
-    case TermAssocProj(info, ty, method) =>
-      for {
-        tyS <- EitherT.liftF(simplifyType(ty))
-        rootTypeVarOption = findRootTypeVar(ty)
-        typeBounds <- EitherT.liftF(
-          getTypeBounds(rootTypeVarOption.getOrElse(tyS))
-        )
-        assocMethodType <- inferMethod(ty, tyS, typeBounds, method, info)
-      } yield assocMethodType
-    case TermFix(info, t1) =>
-      for {
-        tyT1 <- infer(t1)
-        tyT1S <- EitherT.liftF(simplifyType(tyT1))
-        bodyType <- tyT1S match {
-          case TypeArrow(_, tyT11, tyT12) => tyT12.pure[StateEither]
-          case _ =>
-            TypeError.format(InvalidFunctionTypeError(info, tyT1S))
-        }
-      } yield bodyType
-    case TermRecord(info, fields) =>
-      fields
-        .traverse { case (v, term) =>
-          pureInfer(term).map((v, _))
-        }
-        .map(TypeRecord(info, _))
-    case TermFold(info, tyS) =>
-      EitherT
-        .liftF(simplifyType(tyS))
-        .flatMap(_ match {
-          case TypeRec(_, _, _, tyT) =>
-            (TypeArrow(info, typeSubstituteTop(tyS, tyT), tyS): Type).pure
-          case _ =>
-            TypeError.format(InvalidFoldForRecursiveTypeError(info, tyS))
-        })
-    case TermLet(_, variable, t1, t2) =>
-      for {
-        tyT1 <- infer(t1)
-        _ <- EitherT.liftF(addBinding(variable, VarBind(tyT1)))
-        tyT2 <- pureInfer(t2)
-      } yield typeShift(-1, tyT2)
-    case TermTAbs(info, v, cls, t) =>
-      for {
-        typeClassKinds <- cls.traverse(getTypeClassKind(_))
-        kind = typeClassKinds.headOption.getOrElse(KindStar)
-        _ <- EitherT.liftF(addBinding(v, TypeVarBind(kind, cls)))
-        _ <- typeClassKinds.forall(_ == kind) match {
-          case false =>
-            TypeError.format(KindTypeClassMismatchTypeError(info, cls))
-          case true => ().pure[StateEither]
-        }
-        ty <- pureInfer(t).map(TypeAll(info, v, kind, cls, _))
-      } yield ty
-    case TermTApp(info, expr, ty2) =>
-      for {
-        k2 <- kindOf(ty2)
-        ty1 <- pureInfer(expr)
-        tyT1 <- EitherT.liftF(simplifyType(ty1))
-        ty <- tyT1 match {
-          case TypeAll(_, _, k1, _, tyT2) =>
-            typeErrorEitherCond(
-              k1 == k2,
-              typeSubstituteTop(ty2, tyT2),
-              InvalidTypeArgumentTypeError(ty2.info, ty2)
-            )
-          case _ =>
-            TypeError.format(
-              TypeArgumentsNotAllowedTypeError(
-                ty2.info,
-                tyT1
-              )
-            )
-        }
-      } yield ty
-    case TermMatch(info, exprTerm, cases) =>
-      for {
-        // Get the type of the expression to match.
-        exprType <- pureInfer(exprTerm)
-        caseType <- cases.foldRight((None: Option[Type]).pure[StateEither]) {
-          case ((pattern, term), acc) =>
+          }
+        } yield (ty, insts)
+      case TermMatch(info, exprTerm, cases) =>
+        for {
+          // Get the type of the expression to match.
+          (exprType, exprInsts) <- pureInfer(exprTerm)
+          caseType <- cases.foldRight(
+            (None: Option[Type], List[Instantiation]()).pure[StateEither]
+          ) { case ((pattern, term), acc) =>
             for {
-              a <- acc
+              (a, accInsts) <- acc
               mark <- EitherT.liftF(addMark("m"))
               appExprType <- exprType match {
                 case TypeEVar(_, _, _) => apply(exprType)(shift = false)
                 case _                 => exprType.pure[StateEither]
               }
-              (patternType, variables) <- inferPattern(pattern, appExprType)
-              caseExprType <- pureInfer(term)
+              (patternType, variables, patternInsts) <- inferPattern(
+                pattern,
+                appExprType
+              )
+              (caseExprType, caseExprInsts) <- pureInfer(term)
               _ <- a match {
                 case None    => true.pure[StateEither]
                 case Some(t) => subtype(caseExprType, t)
@@ -249,70 +274,80 @@ object TypeChecker {
                     .pure[StateEither]
               }
               _ <- EitherT.liftF(peel(mark))
-            } yield Some(cT)
-        }
-      } yield caseType.getOrElse(TypeUnit(info))
-    case TermTag(info, tag, t1, ty1) =>
-      for {
-        tyS <- EitherT.liftF(simplifyType(ty1))
-        tySVar <- tyS match {
-          case TypeRec(_, _, _, v @ TypeVariant(_, _)) => v.pure[StateEither]
-          case _ =>
-            TypeError.format(TagNotVariantTypeError(info, ty1))
-        }
-        tyTiExpected <- tySVar.v
-          .find(_._1 == tag)
-          .map { case (_, ty) =>
-            typeSubstituteTop(findRootType(ty1), ty).pure[StateEither]
+            } yield (Some(cT), accInsts ::: patternInsts ::: caseExprInsts)
           }
-          .getOrElse(
-            TypeError.format(
-              TagVariantFieldNotFoundTypeError(info, ty1, tag)
+        } yield caseType match {
+          case (t, insts) => (t.getOrElse(TypeUnit(info)), insts)
+        }
+      case TermTag(info, tag, t1, ty1) =>
+        for {
+          tyS <- EitherT.liftF(simplifyType(ty1))
+          tySVar <- tyS match {
+            case TypeRec(_, _, _, v @ TypeVariant(_, _)) => v.pure[StateEither]
+            case _ =>
+              TypeError.format(TagNotVariantTypeError(info, ty1))
+          }
+          tyTiExpected <- tySVar.v
+            .find(_._1 == tag)
+            .map { case (_, ty) =>
+              typeSubstituteTop(findRootType(ty1), ty).pure[StateEither]
+            }
+            .getOrElse(
+              TypeError.format(
+                TagVariantFieldNotFoundTypeError(info, ty1, tag)
+              )
             )
+          (tyTi, insts) <- pureInfer(t1)
+          _ <- isTypeEqualWithTypeError(
+            tyTi,
+            tyTiExpected,
+            TagFieldMismatchTypeError(info, tyTi, tyTiExpected)
           )
-        tyTi <- pureInfer(t1)
-        _ <- isTypeEqualWithTypeError(
-          tyTi,
-          tyTiExpected,
-          TagFieldMismatchTypeError(info, tyTi, tyTiExpected)
-        )
-      } yield typeSubstituteTop(ty1, tySVar)
-    case TermTrue(info)            => TypeBool(info).pure
-    case TermFalse(info)           => TypeBool(info).pure
-    case TermInt(info, _)          => TypeInt(info).pure
-    case TermFloat(info, _)        => TypeFloat(info).pure
-    case TermString(info, _)       => TypeString(info).pure
-    case TermUnit(info)            => TypeUnit(info).pure
-    case TermBuiltin(ty)           => ty.pure
-    case TermClassMethod(info, ty) => ty.pure
-  }
+        } yield (typeSubstituteTop(ty1, tySVar), insts)
+      case TermTrue(info)            => (TypeBool(info), Nil).pure
+      case TermFalse(info)           => (TypeBool(info), Nil).pure
+      case TermInt(info, _)          => (TypeInt(info), Nil).pure
+      case TermFloat(info, _)        => (TypeFloat(info), Nil).pure
+      case TermString(info, _)       => (TypeString(info), Nil).pure
+      case TermUnit(info)            => (TypeUnit(info), Nil).pure
+      case TermBuiltin(ty)           => (ty, Nil).pure
+      case TermClassMethod(info, ty) => (ty, Nil).pure
+    }
 
   /** Infers the type of an application of a function of type `fun` to `exp`.
+    *
     * See Figure 11.
     * @return
-    *   the inferred type and the output context.
+    *   the inferred type with solutions for existential types on the fun type
+    *   and the output context
     */
-  def inferApp(funType: Type, exp: Term): StateEither[Type] = funType match {
-    case TypeAll(info, _, _, cls, tpe) =>
-      for {
-        eV <- EitherT.liftF(addEVar("a", exp.info, TypeEFreeBind, cls))
-        reduced = typeSubstituteTop(eV, tpe)
-        ty <- inferApp(reduced, exp)
-      } yield ty
-    case eA: TypeEVar =>
-      for {
-        (a1, a2, _) <- insertEArrow(eA)
-        _ <- check(exp, a1)
-      } yield a2
-    case TypeArrow(_, argT, restT) => check(exp, argT).map(_ => restT)
-    case _ =>
-      TypeError.format(
-        VariableNotFunctionTypeError(
-          exp.info,
-          funType
-        )
-      )
-  }
+  def inferApp(
+      funType: Type,
+      exp: Term
+  ): StateEither[(Type, List[TypeESolutionBind])] =
+    def iter(
+        funType: Type,
+        exp: Term,
+        acc: List[TypeESolutionBind]
+    ): StateEither[(Type, List[TypeESolutionBind])] =
+      funType match {
+        case TypeAll(info, _, _, cls, tpe) =>
+          for {
+            eV <- EitherT.liftF(addEVar("a", exp.info, TypeEFreeBind, cls))
+            reduced = typeSubstituteTop(eV, tpe)
+            (ty, sols) <- iter(reduced, exp, acc)
+          } yield (ty, acc ::: sols)
+        case eA: TypeEVar =>
+          for {
+            (a1, a2, _) <- insertEArrow(eA)
+            (insts, solutions) <- check(exp, a1)
+          } yield (a2, acc ::: solutions)
+        case TypeArrow(_, argT, restT) =>
+          check(exp, argT).map(v => (restT, (acc ::: v._2)))
+        case _ =>
+          TypeError.format(VariableNotFunctionTypeError(exp.info, funType))
+      }
+    iter(funType, exp, List())
 
   def inferMethod(
       ty: Type,
@@ -365,17 +400,17 @@ object TypeChecker {
   def inferPattern(
       p: Pattern,
       matchExprType: Type
-  ): StateEither[(Option[Type], List[String])] =
+  ): StateEither[(Option[Type], List[String], List[Instantiation])] =
     p match {
-      case t: Term                  => infer(t).map(v => (Some(v), List()))
-      case PatternDefault(_)        => EitherT.pure((None, List()))
+      case t: Term => infer(t).map { (ty, insts) => (Some(ty), List(), insts) }
+      case PatternDefault(_)        => EitherT.pure((None, List(), List()))
       case n @ PatternNode(_, _, _) => inferNodePattern(n, matchExprType)
     }
 
   def inferNodePattern(
       p: PatternNode,
       matchExprType: Type
-  ): StateEither[(Option[Type], List[String])] = for {
+  ): StateEither[(Option[Type], List[String], List[Instantiation])] = for {
     unfoldedExprType <- EitherT.liftF(unfoldType(matchExprType))
     v <- unfoldedExprType match {
       case TypeVariant(_, fields) =>
@@ -397,7 +432,7 @@ object TypeChecker {
               inferPattern(p, tyR).map(_._2)
             case _ => List().pure[StateEither]
           }
-        } yield (Some(matchExprType), variables)
+        } yield (Some(matchExprType), variables, List())
       case TypeRecord(_, fields) =>
         for {
           optionIdx <- EitherT.liftF(
@@ -424,7 +459,7 @@ object TypeChecker {
             p.vars,
             matchExprType
           )
-        } yield (Some(matchExprType), variables)
+        } yield (Some(matchExprType), variables, List())
       case TypeEVar(info, _, _) => inferNodePatternWithEVar(info, p)
       case _ =>
         TypeError.format(
@@ -436,7 +471,7 @@ object TypeChecker {
   def inferNodePatternWithEVar(
       info: Info,
       p: PatternNode
-  ): StateEither[(Option[Type], List[String])] = for {
+  ): StateEither[(Option[Type], List[String], List[Instantiation])] = for {
     optionType <- EitherT.liftF(getAlgebraicDataTypeVar(info, p.tag))
     v <- optionType match {
       case Some(ty) =>
@@ -444,8 +479,8 @@ object TypeChecker {
           tyS <- EitherT.liftF(simplifyType(ty))
           eVars <- EitherT.liftF(extractEVarsFromTypeAbs(tyS))
           tyA = eVars.foldLeft(ty: Type)((acc, eA) => TypeApp(eA.info, acc, eA))
-          (tP, vars) <- inferPattern(p, tyA)
-        } yield (tP, vars)
+          (tP, vars, insts) <- inferPattern(p, tyA)
+        } yield (tP, vars, insts)
       case _ => TypeError.format(MatchNodePatternNotFound(p.info, p))
     }
   } yield v
@@ -577,7 +612,7 @@ object TypeChecker {
       ty2: Type,
       error: TypeError
   ): StateEither[Type] = for {
-    isEqual <- subtype(ty1, ty2)
+    (isEqual, _) <- subtype(ty1, ty2)
     t <- typeErrorEitherCond(
       isEqual,
       ty1,
@@ -683,7 +718,7 @@ object TypeChecker {
           TypeClass(ty.info, className),
           method
         )
-        isSubType <- subtype(typeClassMethodType, ty)
+        (isSubType, _) <- subtype(typeClassMethodType, ty)
         v <- isSubType match {
           case true => ().pure[StateEither]
           case false =>
@@ -731,45 +766,49 @@ object TypeChecker {
   /** Checks (solves exist vars) that `exp` has type `t` with input context
     * `ctx`.
     */
-  def check(exp: Term, t: Type): StateEither[Unit] = (exp, t) match {
-    // 1I :: ((), 1)
-    case (_, _: TypeAny)                   => ().pure
-    case (TermUnit(_), TypeUnit(_))        => ().pure
-    case (TermFloat(_, _), TypeFloat(_))   => ().pure
-    case (TermString(_, _), TypeString(_)) => ().pure
-    case (TermInt(_, _), TypeInt(_))       => ().pure
-    case (TermTrue(_), TypeBool(_))        => ().pure
-    case (TermFalse(_), TypeBool(_))       => ().pure
-    // ->I :: (λx.e, A→B)
-    case (TermClosure(_, arg, None, exp), TypeArrow(_, argT, expT)) =>
-      for {
-        b <- EitherT.liftF(addBinding(arg, VarBind(argT)))
-        _ <- check(exp, expT) // Γ,α ⊢ e ⇐ A ⊣ ∆,α,Θ
-        _ <- EitherT.liftF(peel(b))
-      } yield ()
-    // ∀I :: (e, ∀α.A)
-    case (exp, TypeAll(_, uA, k, cls, tpe)) =>
-      for {
-        b <- EitherT.liftF(addBinding(uA, TypeVarBind(k, cls)))
-        _ <- check(exp, tpe)
-        _ <- EitherT.liftF(peel(b))
-      } yield ()
-    // Sub :: (e, B)
-    case (exp, tpe) =>
-      for {
-        expType <- infer(exp) // Γ ⊢ e ⇒ A ⊣ Θ
-        redExpType <- apply(expType)
-        reducedType <- apply(tpe)
-        r <- subtype(redExpType, reducedType)
-        _ <- r match {
-          case true => ().pure[StateEither]
-          case false =>
-            TypeError.format(
-              InvalidSubtypeTypeError(exp.info, redExpType, reducedType)
-            )
-        }
-      } yield ()
-  }
+  def check(
+      exp: Term,
+      t: Type
+  ): StateEither[(List[Instantiation], List[TypeESolutionBind])] =
+    (exp, t) match {
+      // 1I :: ((), 1)
+      case (_, _: TypeAny)                   => (Nil, Nil).pure
+      case (TermUnit(_), TypeUnit(_))        => (Nil, Nil).pure
+      case (TermFloat(_, _), TypeFloat(_))   => (Nil, Nil).pure
+      case (TermString(_, _), TypeString(_)) => (Nil, Nil).pure
+      case (TermInt(_, _), TypeInt(_))       => (Nil, Nil).pure
+      case (TermTrue(_), TypeBool(_))        => (Nil, Nil).pure
+      case (TermFalse(_), TypeBool(_))       => (Nil, Nil).pure
+      // ->I :: (λx.e, A→B)
+      case (TermClosure(_, arg, None, exp), TypeArrow(_, argT, expT)) =>
+        for {
+          b <- EitherT.liftF(addBinding(arg, VarBind(argT)))
+          insts <- check(exp, expT) // Γ,α ⊢ e ⇐ A ⊣ ∆,α,Θ
+          _ <- EitherT.liftF(peel(b))
+        } yield insts
+      // ∀I :: (e, ∀α.A)
+      case (exp, TypeAll(_, uA, k, cls, tpe)) =>
+        for {
+          b <- EitherT.liftF(addBinding(uA, TypeVarBind(k, cls)))
+          insts <- check(exp, tpe)
+          _ <- EitherT.liftF(peel(b))
+        } yield insts
+      // Sub :: (e, B)
+      case (exp, tpe) =>
+        for {
+          (expType, insts) <- infer(exp) // Γ ⊢ e ⇒ A ⊣ Θ
+          redExpType <- apply(expType)
+          reducedType <- apply(tpe)
+          (r, solutions) <- subtype(redExpType, reducedType)
+          _ <- r match {
+            case true => ().pure[StateEither]
+            case false =>
+              TypeError.format(
+                InvalidSubtypeTypeError(exp.info, redExpType, reducedType)
+              )
+          }
+        } yield (insts, solutions)
+    }
 
   /** Applies `ctx` to `tpe` (substituting existential vars for their
     * solutions).
@@ -802,36 +841,39 @@ object TypeChecker {
     * @return
     *   true value if `tpeA` is subtype of `typB`
     */
-  def subtype(tpeA: Type, tpeB: Type): StateEither[Boolean] =
+  def subtype(
+      tpeA: Type,
+      tpeB: Type
+  ): StateEither[(Boolean, List[TypeESolutionBind])] =
     (tpeA, tpeB) match {
       // <:Exvar :: Γ[â] ⊢ â <: â ⊣ Γ[â]
       case (eA @ TypeEVar(info, n1, _), TypeEVar(_, n2, _)) if (n1 == n2) =>
         EitherT
           .liftF(containsFreeEVar(eA))
           .flatMap(_ match {
-            case true => true.pure[StateEither]
+            case true => (true, List()).pure
             case false =>
               TypeError.format(UnboundExistentialVariableTypeError(info, eA))
           })
       // <:→ :: Γ ⊢ A1→A2 <: B1→B2 ⊣ ∆
       case (TypeArrow(_, a1, a2), TypeArrow(_, b1, b2)) =>
         for {
-          s1 <- subtype(b1, a1)
+          (s1, sol1) <- subtype(b1, a1)
           redA2 <- apply(a2)(shift = false)
           redB2 <- apply(b2)(shift = false)
-          s2 <- subtype(redA2, redB2)
-        } yield s1 && s2
+          (s2, sol2) <- subtype(redA2, redB2)
+        } yield (s1 && s2, sol1 ::: sol2)
       case (TypeApp(_, a1, a2), TypeApp(_, b1, b2)) =>
         for {
           // NOTE: When dealing with closures we could recieve type vars that
           // are not shifted properly after adding existential var bindings,
           // thus we need to resolve this by shifting the context.
           b1S <- EitherT.liftF(typeShiftOnContextDiff(b1))
-          s1 <- subtype(b1S, a1)
+          (s1, sol1) <- subtype(b1S, a1)
           redA2 <- apply(a2)(shift = false)
           redB2 <- apply(b2)(shift = false)
-          s2 <- subtype(redA2, redB2)
-        } yield s1 && s2
+          (s2, sol2) <- subtype(redA2, redB2)
+        } yield (s1 && s2, sol1 ::: sol2)
       // <:∀L :: Γ ⊢ ∀α.A <: B ⊣ ∆
       case (TypeAll(info, _, _, cls, a), b) =>
         for {
@@ -853,8 +895,8 @@ object TypeChecker {
           isFree <- EitherT.liftF(Context.containsFreeEVar(eA))
           hasFree = a.containsEVar(eA)
           r <- isFree && !hasFree match {
-            case false => false.pure[StateEither]
-            case true  => instantiateL(eA, a).map(_ => true)
+            case false => (false, List()).pure[StateEither]
+            case true  => instantiateL(eA, a).map((true, _))
           }
         } yield r
       // <:InstantiateR :: Γ[â] ⊢ A <: â ⊣ ∆
@@ -863,57 +905,55 @@ object TypeChecker {
           isFree <- EitherT.liftF(Context.containsFreeEVar(eA))
           hasFree = a.containsEVar(eA)
           r <- isFree && !hasFree match {
-            case false => false.pure[StateEither]
-            case true  => instantiateR(a, eA).map(_ => true)
+            case false => (false, List()).pure[StateEither]
+            case true  => instantiateR(a, eA).map((true, _))
           }
         } yield r
-      case _ =>
-        for {
-          r <- EitherT.liftF(isTypeEqual(tpeA, tpeB))
-          _ <- r match {
-            case true  => true.pure[StateEither]
-            case false => false.pure[StateEither]
-          }
-        } yield r
+      case _ => EitherT.liftF(isTypeEqual(tpeA, tpeB)).map((_, List()))
     }
 
   /** Instantiates `eA` such that `eA <: a` in `ctx`. See Figure 10.
     * @return
     *   the output context.
     */
-  def instantiateL(eA: TypeEVar, a: Type): StateEither[Unit] = {
+  def instantiateL(
+      eA: TypeEVar,
+      a: Type
+  ): StateEither[List[TypeESolutionBind]] = {
     def instantiate(
         isSimple: Boolean,
         containsEVarWithPeel: Boolean,
         containsEVar: Boolean
-    ) = (a, isSimple, containsEVarWithPeel, containsEVar) match {
-      case (a, true, _, _) /* Γ ⊢ τ */ => solve(eA, a) // Γ,â=τ,Γ′
-      case (eC: TypeEVar, _, true, _)  => solve(eC, eA)
-      case (TypeApp(_, a1, a2), _, _, true) =>
-        for {
-          (eA1, eA2, _) <- insertEApp(eA)
-          _ <- instantiateR(a1, eA1)
-          redA2 <- apply(a2)(shift = false)
-          _ <- instantiateL(eA2, redA2)
-        } yield ()
-      // InstLArr :: Γ[â] ⊢ â :=< A1 → A2 ⊣ ∆
-      case (TypeArrow(info, a1, a2), _, _, true) =>
-        for {
-          (eA1, eA2, _) <- insertEArrow(eA)
-          _ <- instantiateR(a1, eA1)
-          redA2 <- apply(a2)(shift = false)
-          _ <- instantiateL(eA2, redA2)
-        } yield ()
-      // InstLAllR :: Γ[â] ⊢ â :=< ∀β.B ⊣ ∆
-      case (TypeAll(_, uB, k, cls, b), _, _, true) =>
-        for {
-          v <- EitherT.liftF(Context.addBinding(uB, TypeVarBind(k, cls)))
-          // Γ[â],β ⊢ â :=< B ⊣ ∆,β,∆′
-          r <- instantiateL(eA, b)
-          _ <- EitherT.liftF(peel(v))
-        } yield r
-      case _ => TypeError.format(FailedToInstantiateTypeError(eA.info, eA, a))
-    }
+    ): StateEither[List[TypeESolutionBind]] =
+      (a, isSimple, containsEVarWithPeel, containsEVar) match {
+        case (a, true, _, _) /* Γ ⊢ τ */ =>
+          solve(eA, a).map(List(_)) // Γ,â=τ,Γ′
+        case (eC: TypeEVar, _, true, _) => solve(eC, eA).map(List(_))
+        case (TypeApp(_, a1, a2), _, _, true) =>
+          for {
+            (eA1, eA2, _) <- insertEApp(eA)
+            sR <- instantiateR(a1, eA1)
+            redA2 <- apply(a2)(shift = false)
+            sL <- instantiateL(eA2, redA2)
+          } yield sR ::: sL
+        // InstLArr :: Γ[â] ⊢ â :=< A1 → A2 ⊣ ∆
+        case (TypeArrow(info, a1, a2), _, _, true) =>
+          for {
+            (eA1, eA2, _) <- insertEArrow(eA)
+            sR <- instantiateR(a1, eA1)
+            redA2 <- apply(a2)(shift = false)
+            sL <- instantiateL(eA2, redA2)
+          } yield sR ::: sL
+        // InstLAllR :: Γ[â] ⊢ â :=< ∀β.B ⊣ ∆
+        case (TypeAll(_, uB, k, cls, b), _, _, true) =>
+          for {
+            v <- EitherT.liftF(Context.addBinding(uB, TypeVarBind(k, cls)))
+            // Γ[â],β ⊢ â :=< B ⊣ ∆,β,∆′
+            r <- instantiateL(eA, b)
+            _ <- EitherT.liftF(peel(v))
+          } yield r
+        case _ => TypeError.format(FailedToInstantiateTypeError(eA.info, eA, a))
+      }
     for {
       b1 <- isMonoAndWellFormed(a, eA)
       b2 <- EitherT.liftF(containsEVarWithPeel(eA, a))
@@ -926,40 +966,45 @@ object TypeChecker {
     * @return
     *   the output context.
     */
-  def instantiateR(a: Type, eA: TypeEVar): StateEither[Unit] = {
+  def instantiateR(
+      a: Type,
+      eA: TypeEVar
+  ): StateEither[List[TypeESolutionBind]] = {
     def instantiate(
         isSimple: Boolean,
         containsEVarWithPeel: Boolean,
         containsEVar: Boolean
-    ) = (a, isSimple, containsEVarWithPeel, containsEVar) match {
-      case (a, true, _, _) /* Γ ⊢ τ */ => solve(eA, a) // Γ,â=τ,Γ′
-      case (eC: TypeEVar, _, true, _)  => solve(eC, eA)
-      case (TypeApp(_, a1, a2), _, _, true) =>
-        for {
-          (eA1, eA2, _) <- insertEApp(eA)
-          _ <- instantiateL(eA1, a1)
-          redA2 <- apply(a2)(shift = false)
-          _ <- instantiateR(redA2, eA2)
-        } yield ()
-      // InstRArr :: Γ[â] ⊢ A1 → A2 :=< â ⊣ ∆
-      case (TypeArrow(info, a1, a2), _, _, true) =>
-        for {
-          (eA1, eA2, _) <- insertEArrow(eA)
-          _ <- instantiateL(eA1, a1)
-          redA2 <- apply(a2)(shift = false)
-          _ <- instantiateR(redA2, eA2)
-        } yield ()
-      // InstRAllL :: Γ[â],▶ĉ,ĉ ⊢ [ĉ/β]B :=< â ⊣ ∆,▶ĉ,∆′
-      case (TypeAll(info, _, _, cls, b), _, _, true) =>
-        for {
-          eCMark <- EitherT.liftF(Context.addMark("c"))
-          eC <- EitherT.liftF(Context.addEVar("c", info, TypeEFreeBind, cls))
-          // Γic ⊢ [ĉ/β]B :=< â ⊣ ∆,▶ĉ,∆′
-          r <- instantiateR(typeSubstituteTop(eC, b), eA)
-          _ <- EitherT.liftF(peel(eCMark)) // ∆
-        } yield r
-      case _ => TypeError.format(FailedToInstantiateTypeError(eA.info, a, eA))
-    }
+    ): StateEither[List[TypeESolutionBind]] =
+      (a, isSimple, containsEVarWithPeel, containsEVar) match {
+        case (a, true, _, _) /* Γ ⊢ τ */ =>
+          solve(eA, a).map(List(_)) // Γ,â=τ,Γ′
+        case (eC: TypeEVar, _, true, _) => solve(eC, eA).map(List(_))
+        case (TypeApp(_, a1, a2), _, _, true) =>
+          for {
+            (eA1, eA2, _) <- insertEApp(eA)
+            sL <- instantiateL(eA1, a1)
+            redA2 <- apply(a2)(shift = false)
+            sR <- instantiateR(redA2, eA2)
+          } yield sL ::: sR
+        // InstRArr :: Γ[â] ⊢ A1 → A2 :=< â ⊣ ∆
+        case (TypeArrow(info, a1, a2), _, _, true) =>
+          for {
+            (eA1, eA2, _) <- insertEArrow(eA)
+            sL <- instantiateL(eA1, a1)
+            redA2 <- apply(a2)(shift = false)
+            sR <- instantiateR(redA2, eA2)
+          } yield sL ::: sR
+        // InstRAllL :: Γ[â],▶ĉ,ĉ ⊢ [ĉ/β]B :=< â ⊣ ∆,▶ĉ,∆′
+        case (TypeAll(info, _, _, cls, b), _, _, true) =>
+          for {
+            eCMark <- EitherT.liftF(Context.addMark("c"))
+            eC <- EitherT.liftF(Context.addEVar("c", info, TypeEFreeBind, cls))
+            // Γic ⊢ [ĉ/β]B :=< â ⊣ ∆,▶ĉ,∆′
+            r <- instantiateR(typeSubstituteTop(eC, b), eA)
+            _ <- EitherT.liftF(peel(eCMark)) // ∆
+          } yield r
+        case _ => TypeError.format(FailedToInstantiateTypeError(eA.info, a, eA))
+      }
     for {
       b1 <- isMonoAndWellFormed(a, eA)
       b2 <- EitherT.liftF(containsEVarWithPeel(eA, a))
@@ -974,7 +1019,7 @@ object TypeChecker {
       case false => false.pure
     }
 
-  def solve(eA: TypeEVar, ty: Type): StateEither[Unit] = for {
+  def solve(eA: TypeEVar, ty: Type): StateEither[TypeESolutionBind] = for {
     (idx, cls) <- getFreeEVarIndex(eA)
     z <- cls match {
       case Nil => EitherT.liftF(replaceEVar(idx, eA, TypeESolutionBind(ty)))

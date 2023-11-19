@@ -462,7 +462,7 @@ object Grin {
   )(implicit substFunc: String => String): ContextState[CaseClause] = p match {
     case PatternNode(_, node, vars) =>
       for {
-        (_, bindVariables) <- toContextState(
+        (_, bindVariables, _) <- toContextState(
           TypeChecker.inferPattern(p, matchExprType)
         )
         cpat = s"(${cTag(node)} ${bindVariables.mkString(" ")})"

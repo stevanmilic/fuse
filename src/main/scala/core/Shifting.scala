@@ -2,11 +2,12 @@ package core
 
 import core.Bindings.*
 import core.Types.*
+import core.Terms.*
 import parser.Info.*
 
 object Shifting {
 
-  type ShiftVarFunc = (Info, Int, Int, Int) => Type
+  type ShiftVarFunc[T] = (Info, Int, Int, Int) => T
 
   def bindingShift(d: Int, b: Binding): Binding = b match {
     case NameBind              => NameBind
@@ -25,16 +26,63 @@ object Shifting {
     case t @ TermAbbBind(_, None) => t
   }
 
-  def typeShift(d: Int, ty: Type): Type =
-    typeShiftAbove(d, 0, ty)
-
-  def typeShiftAbove(d: Int, c: Int, ty: Type): Type =
-    typeMap(
+  def termSubstituteType(
+      tyS: Type,
+      term: Term,
+      idx: Integer
+  ): Term =
+    termMap(
       (info, c, k, n) =>
-        if (k >= c) TypeVar(info, k + d, n + d) else TypeVar(info, k, n + d),
-      c,
-      ty
+        if (k >= c) TermVar(info, k - 1, n - 1) else TermVar(info, k, n - 1),
+      tyS,
+      idx,
+      term
     )
+
+  def termMap(
+      onTermVar: ShiftVarFunc[Term],
+      tyS: Type,
+      c: Int,
+      t: Term
+  ): Term = {
+    def iter(c: Int, term: Term): Term = term match {
+      case TermVar(info, x, n) => onTermVar(info, c, x, n)
+      case TermAbs(info, i, ty, e, r) =>
+        TermAbs(
+          info,
+          i,
+          typeSubstitute(tyS, c, ty),
+          iter(c + 1, e),
+          r.map(typeSubstitute(tyS, c + 1, _))
+        )
+      case TermClosure(info, i, ty, e) =>
+        TermClosure(
+          info,
+          i,
+          ty.map(typeSubstitute(tyS, c, _)),
+          iter(c + 1, e)
+        )
+      case TermApp(info, t1, t2) => TermApp(info, iter(c, t1), iter(c, t2))
+      case TermFix(info, t)      => TermFix(info, iter(c, t))
+      case TermMatch(info, t, cases) =>
+        TermMatch(info, t, cases.map((p, e) => (p, iter(c, e))))
+      case TermLet(info, i, t1, t2) =>
+        TermLet(info, i, iter(c, t1), iter(c, t2))
+      case TermProj(info, t, i)       => TermProj(info, iter(c, t), i)
+      case TermMethodProj(info, t, i) => TermMethodProj(info, iter(c, t), i)
+      case TermAssocProj(info, ty, i) =>
+        TermAssocProj(info, typeSubstitute(tyS, c, ty), i)
+      case TermRecord(info, v) =>
+        TermRecord(info, v.map((i, t) => (i, iter(c, t))))
+      case TermTag(info, i, t, ty) =>
+        TermTag(info, i, iter(c, t), typeSubstitute(tyS, c, ty))
+      case TermAscribe(info, t, ty) =>
+        TermAscribe(info, iter(c, t), typeSubstitute(tyS, c, ty))
+      case TermTApp(info, t, ty) => TermTApp(info, iter(c, t), ty)
+      case v                     => v
+    }
+    iter(c, t)
+  }
 
   def typeSubstituteTop(tyS: Type, tyT: Type): Type =
     typeShift(-1, typeSubstitute(typeShift(1, tyS), 0, tyT))
@@ -46,7 +94,18 @@ object Shifting {
       tyT
     )
 
-  def typeMap(onVar: ShiftVarFunc, c: Int, t: Type): Type = {
+  def typeShift(d: Int, ty: Type): Type =
+    typeShiftAbove(d, 0, ty)
+
+  def typeShiftAbove(d: Int, c: Int, ty: Type): Type =
+    typeMap(
+      (info, c, k, n) =>
+        if (k >= c) TypeVar(info, k + d, n + d) else TypeVar(info, k, n + d),
+      c,
+      ty
+    )
+
+  def typeMap(onVar: ShiftVarFunc[Type], c: Int, t: Type): Type = {
     def iter(c: Int, tyT: Type): Type = tyT match {
       case TypeVar(info, x, n) => onVar(info, c, x, n)
       case TypeEVar(_, _, _)   => tyT

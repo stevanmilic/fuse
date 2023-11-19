@@ -88,7 +88,6 @@ object GrinUtils {
       case TermTAbs(_, _, _, t)    => freeVars(t)
       case TermTApp(_, t, _)       => freeVars(t)
       case _                       => State.pure(Nil)
-
     }
 
   def addTempVariable(name: String = "p"): ContextState[String] =
@@ -101,7 +100,7 @@ object GrinUtils {
     State.inspect { ctx => Context.indexToName(ctx, idx).get }
 
   def typeCheck(term: Term): ContextState[Type] =
-    toContextState(TypeChecker.pureInfer(term))
+    toContextState(TypeChecker.pureInfer(term).map(_._1))
 
   def toContextState[T](stateEither: StateEither[T]): ContextState[T] =
     stateEither.value.map(v =>
