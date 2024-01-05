@@ -1532,7 +1532,14 @@ fun main() -> Unit
     let s = identity("Hello World")
     print(s)
         """,
-      BuildOutput("")
+      BuildOutput("""
+identity#str v0 =
+ pure v0
+
+grinMain _1 =
+ s3 <-  identity#str #"Hello World"
+ _prim_string_print s3
+        """)
     )
   }
   test("build generic constructor") {

@@ -14,7 +14,13 @@ import core.Types.*
 import parser.Info.Info
 
 object Instantiations {
-  case class Instantiation(info: Info, i: String, idx: Int, tys: List[Type])
+  val BindTypeSeparator = "#"
+
+  case class Instantiation(info: Info, i: String, idx: Int, tys: List[Type]) {
+    def bindName(): StateEither[String] = tys
+      .traverse(Representation.typeToString(_))
+      .map(t => s"${i}$BindTypeSeparator${t.mkString(BindTypeSeparator)}")
+  }
 
   def build(
       t: Term,

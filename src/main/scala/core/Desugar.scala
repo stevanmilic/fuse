@@ -800,7 +800,7 @@ object Desugar {
           )
     }
 
-  // Prepends the identifier with "#" if it's an integer – depicting it's used
+  // Prepends the identifier with "t" if it's an integer – depicting it's used
   // for the tuple records. If not, the identifier is returned unchanged.
   def withTupleParamId(i: String) = i.toIntOption match {
     case Some(v) => s"t$i"
