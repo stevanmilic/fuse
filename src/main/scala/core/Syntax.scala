@@ -10,6 +10,7 @@ object Types {
 
   sealed abstract trait Type {
     def isMono: Boolean = true
+    def isPrimitive: Boolean = false
 
     /** Returns whether `eV` is in the free variables of this type. */
     def containsEVar(eV: TypeEVar): Boolean
@@ -30,12 +31,15 @@ object Types {
   }
   case class TypeArrow(info: Info, t1: Type, t2: Type) extends Type {
     override def isMono: Boolean = t1.isMono && t2.isMono
+    override def isPrimitive: Boolean = t1.isPrimitive && t2.isPrimitive
     def containsEVar(eV: TypeEVar): Boolean =
       t1.containsEVar(eV) || t2.containsEVar(eV)
   }
   case class TypeUnit(info: Info) extends Type {
+    override def isPrimitive: Boolean = true
     def containsEVar(eV: TypeEVar): Boolean = false
   }
+  // TODO: Add `isPrimitive` imp for `TypeRecord` & `TypeVariant` (?)
   case class TypeRecord(info: Info, f: List[(String, Type)]) extends Type {
     def containsEVar(eV: TypeEVar): Boolean =
       f.unzip._2.exists(_.containsEVar(eV))
@@ -66,15 +70,19 @@ object Types {
       t1.containsEVar(eV) || t2.containsEVar(eV)
   }
   case class TypeBool(info: Info) extends Type {
+    override def isPrimitive: Boolean = true
     def containsEVar(eV: TypeEVar): Boolean = false
   }
   case class TypeString(info: Info) extends Type {
+    override def isPrimitive: Boolean = true
     def containsEVar(eV: TypeEVar): Boolean = false
   }
   case class TypeFloat(info: Info) extends Type {
+    override def isPrimitive: Boolean = true
     def containsEVar(eV: TypeEVar): Boolean = false
   }
   case class TypeInt(info: Info) extends Type {
+    override def isPrimitive: Boolean = true
     def containsEVar(eV: TypeEVar): Boolean = false
   }
   case class TypeAny(info: Info) extends Type {

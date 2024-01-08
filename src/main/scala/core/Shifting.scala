@@ -4,11 +4,21 @@ import core.Bindings.*
 import core.Types.*
 import core.Terms.*
 import parser.Info.*
+import core.Instantiations.Instantiation
 
 object Shifting {
 
   type ShiftVarFunc[T] = (Info, Int, Int, Int) => T
   type TypeVarFunc = (Int, Type) => Type
+
+  def bindShift(d: Int, b: Bind): Bind =
+    Bind(
+      b.i,
+      bindingShift(d, b.b),
+      b.insts.map(i =>
+        Instantiation(i.i, termShift(d, i.term), i.tys.map(typeShift(d, _)))
+      )
+    )
 
   def bindingShift(d: Int, b: Binding): Binding = b match {
     case NameBind              => NameBind
@@ -23,7 +33,7 @@ object Shifting {
     case TypeClassInstanceBind(c, ty, m) =>
       TypeClassInstanceBind(c, typeShift(d, ty), m)
     case TermAbbBind(term, Some(ty)) =>
-      TermAbbBind(term, Some(typeShift(d, ty)))
+      TermAbbBind(termShift(d, term), Some(typeShift(d, ty)))
     case t @ TermAbbBind(_, None) => t
   }
 
@@ -45,16 +55,14 @@ object Shifting {
       t
     )
 
-  /** Substitutes `TermVar` instances having `c` index with `s` index in
-    * provided `tT` term .
-    *
-    * Note that the replacement of `TermVar` index is absolute; the `c`
-    * parameter isn't being incremented for the nested contexts.
+  /** Substitutes `tC` instance with `TermVar` having `s` index in provided `tT`
+    * term .
     */
-  def termVarAbsSubstitute(s: Int, c: Int, tT: Term): Term =
+  def termVarSubstitute(s: Int, tC: TermVar, tT: Term): Term =
     termMap(
-      (info, _, x, n) =>
-        if (x == c) TermVar(info, s, n) else TermVar(info, x, n),
+      (info, j, x, n) =>
+        if (tC.info == info && tC.i1 == x) TermVar(info, s + j - 1, n)
+        else TermVar(info, x, n),
       (_, ty) => ty,
       0,
       tT
@@ -114,7 +122,7 @@ object Shifting {
       case TermMatch(info, t, cases) =>
         TermMatch(info, t, cases.map((p, e) => (p, iter(c, e))))
       case TermLet(info, i, t1, t2) =>
-        TermLet(info, i, iter(c, t1), iter(c, t2))
+        TermLet(info, i, iter(c, t1), iter(c + 1, t2))
       case TermProj(info, t, i)       => TermProj(info, iter(c, t), i)
       case TermMethodProj(info, t, i) => TermMethodProj(info, iter(c, t), i)
       case TermAssocProj(info, ty, i) =>

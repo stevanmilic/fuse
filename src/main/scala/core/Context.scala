@@ -120,14 +120,37 @@ object Context {
       info: Info,
       node: String
   ): ContextState[Option[TypeVar]] =
+    findAlgebraicDataType(info, node).map(
+      _.map(v => TypeVar(info, v._2, v._3))
+    )
+
+  def getAlgebraicDataTypeName(
+      info: Info,
+      node: String
+  ): ContextState[Option[String]] =
+    findAlgebraicDataType(info, node).map(_.map(_._1._1))
+
+  /** Finds algebraic data type name using the name from one of its nodes.
+    *
+    * For a record type the node name will be equal to ADT name, while for sum
+    * type the node name will be equal to of its enumarations.
+    */
+  def findAlgebraicDataType(
+      info: Info,
+      node: String
+  ): ContextState[Option[(Note, Int, Int)]] =
     State.inspect { (ctx: Context) =>
       val notes = getNotes(ctx).toList
-      notes.zipWithIndex.collectFirst {
-        case ((i, TypeAbbBind(_, _)), idx) if i == node =>
-          TypeVar(info, idx, notes.length)
-        case ((_, TypeAbbBind(ty, _)), idx) if isSumType(ty, node) =>
-          TypeVar(info, idx, notes.length)
-      }
+      notes.zipWithIndex
+        .find {
+          case ((i, TypeAbbBind(_, _)), idx) if i == node =>
+            true
+          case ((_, TypeAbbBind(ty, _)), idx) if isSumType(ty, node) =>
+            true
+          case _ =>
+            false
+        }
+        .map((n, idx) => (n, idx, notes.length))
     }
 
   /** Shifts type based on the difference between TypeVar length and current

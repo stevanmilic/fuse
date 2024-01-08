@@ -1542,6 +1542,63 @@ grinMain _1 =
         """)
     )
   }
+  test("build generic function with multiple instantiations") {
+    fuse(
+      """
+fun identity[T](v: T) -> T
+    v
+
+fun main() -> i32
+    let s = identity("Hello World")
+    let i = identity(1)
+    print(s)
+    i
+        """,
+      BuildOutput("""
+identity#str v0 =
+ pure v0
+
+identity#i32 v1 =
+ pure v1
+
+grinMain _2 =
+ s4 <-  identity#str #"Hello World"
+ i6 <-  identity#i32 1
+ _8 <-  _prim_string_print s4
+ pure i6
+        """)
+    )
+  }
+  test("build generic function that calls different generic function") {
+    fuse(
+      """
+fun identity[T](v: T) -> T
+    v
+
+fun id[A](a: A) -> A
+  identity(a)
+
+fun main() -> i32
+    let s = id("Hello World")
+    let i = id(5)
+    print(s)
+    i
+        """,
+      BuildOutput("""
+identity#str v0 =
+ pure v0
+
+identity#i32 v1 =
+ pure v1
+
+grinMain _2 =
+ s4 <-  identity#str #"Hello World"
+ i6 <-  identity#i32 1
+ _8 <-  _prim_string_print s4
+ pure i6
+        """)
+    )
+  }
   test("build generic constructor") {
     fuse(
       """
