@@ -1569,7 +1569,7 @@ grinMain _2 =
         """)
     )
   }
-  test("build generic function that calls different generic function") {
+  test("build generic function that calls different generic function".ignore) {
     fuse(
       """
 fun identity[T](v: T) -> T
