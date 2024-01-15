@@ -1569,7 +1569,7 @@ grinMain _2 =
         """)
     )
   }
-  test("build generic function that calls different generic function".ignore) {
+  test("build generic function that calls different generic function") {
     fuse(
       """
 fun identity[T](v: T) -> T
@@ -1591,11 +1591,17 @@ identity#str v0 =
 identity#i32 v1 =
  pure v1
 
-grinMain _2 =
- s4 <-  identity#str #"Hello World"
- i6 <-  identity#i32 1
- _8 <-  _prim_string_print s4
- pure i6
+id#str a2 =
+ identity#str a2
+
+id#i32 a3 =
+ identity#str a3
+
+grinMain _4 =
+ s6 <-  id#str #"Hello World"
+ i8 <-  id#i32 5
+ _10 <-  _prim_string_print s6
+ pure i8
         """)
     )
   }

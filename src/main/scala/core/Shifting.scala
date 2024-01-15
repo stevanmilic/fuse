@@ -11,29 +11,38 @@ object Shifting {
   type ShiftVarFunc[T] = (Info, Int, Int, Int) => T
   type TypeVarFunc = (Int, Type) => Type
 
-  def bindShift(d: Int, b: Bind): Bind =
+  case class Shift(d: Int, c: Int)
+
+  def incrShifts(shifts: List[Shift]): List[Shift] =
+    shifts.map(s => Shift(s.d, s.c + 1))
+
+  def bindShift(d: Int, b: Bind, c: Int = 0): Bind =
     Bind(
       b.i,
-      bindingShift(d, b.b),
+      bindingShift(d, b.b, c),
       b.insts.map(i =>
-        Instantiation(i.i, termShift(d, i.term), i.tys.map(typeShift(d, _)))
+        Instantiation(
+          i.i,
+          termShiftAbove(d, c, i.term),
+          i.tys.map(typeShiftAbove(d, c, _))
+        )
       )
     )
 
-  def bindingShift(d: Int, b: Binding): Binding = b match {
+  def bindingShift(d: Int, b: Binding, c: Int = 0): Binding = b match {
     case NameBind              => NameBind
     case TypeEMarkBind         => TypeEMarkBind
     case TypeEFreeBind         => TypeEFreeBind
     case TempVarBind           => TempVarBind
-    case TypeESolutionBind(ty) => TypeESolutionBind(typeShift(d, ty))
+    case TypeESolutionBind(ty) => TypeESolutionBind(typeShiftAbove(d, c, ty))
     case t @ TypeVarBind(_, _) => t
-    case VarBind(ty)           => VarBind(typeShift(d, ty))
-    case TypeAbbBind(ty, k)    => TypeAbbBind(typeShift(d, ty), k)
+    case VarBind(ty)           => VarBind(typeShiftAbove(d, c, ty))
+    case TypeAbbBind(ty, k)    => TypeAbbBind(typeShiftAbove(d, c, ty), k)
     case c: TypeClassBind      => c
-    case TypeClassInstanceBind(c, ty, m) =>
-      TypeClassInstanceBind(c, typeShift(d, ty), m)
+    case TypeClassInstanceBind(cls, ty, m) =>
+      TypeClassInstanceBind(cls, typeShiftAbove(d, c, ty), m)
     case TermAbbBind(term, Some(ty)) =>
-      TermAbbBind(termShift(d, term), Some(typeShift(d, ty)))
+      TermAbbBind(termShiftAbove(d, c, term), Some(typeShiftAbove(d, c, ty)))
     case t @ TermAbbBind(_, None) => t
   }
 

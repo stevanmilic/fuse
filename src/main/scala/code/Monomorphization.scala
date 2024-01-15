@@ -36,15 +36,6 @@ object Monomorphization {
     *   monomorphic bindings
     */
   def replace(binds: List[Bind]): List[Bind] =
-    // // Collect instantiations.
-    // val insts = Instantiations.distinct(binds.map(_.insts).flatten)
-    // // Create specialilized functions for each bindig that has an instantiation.
-    // val specializedBinds = toSpecializedBinds(binds, insts)
-    // // Replace each generic function invocation with a specialized function.
-    // specializedBinds
-    //   .flatMap(_.traverse(replaceInstantiations(_)))
-    //   .runEmptyA
-    //   .value
     replaceM(binds).runEmptyA.value
 
   def replaceM(binds: List[Bind]): ContextState[List[Bind]] =
@@ -58,9 +49,55 @@ object Monomorphization {
           specializedBinds <- toSpecializedBinds(binds, insts)
           // Replace each generic function invocation with a specialized function.
           modifiedBinds <- specializedBinds.traverse(replaceInstantiations(_))
+          // Do a recursive replace until no generic instantiations are found.
           ibinds <- replaceM(modifiedBinds)
         } yield ibinds
     }
+
+  /** Creates specialized functions (binds) for `binds` by using list of
+    * instantiations.
+    *
+    * It iterates over all binds and creates specialization only for binds that
+    * have an instantiation for it. Once the instantiation is found specialized
+    * binds are inserted into the bind list.
+    *
+    * Because specialized binds are inserted into the list, the binds that
+    * appear after it gotta be shifted. As their variable indxes may point to
+    * the symbols before newly inserted binds. That's why a list of shifts is
+    * accumulated on iterating the binds list.
+    */
+  def toSpecializedBinds(
+      binds: List[Bind],
+      insts: List[Instantiation]
+  ): ContextState[List[Bind]] =
+    binds
+      .foldLeftM((List[Bind](), List[Shift]())) {
+        case ((binds, shifts), bind) =>
+          getBindInstantiations(bind, insts).flatMap(_ match {
+            case Nil =>
+              val sbind = shifts.foldLeft(bind) { (b, s) =>
+                bindShift(s.d, b, s.c)
+              }
+              addBinding(sbind.i, sbind.b).map(_ =>
+                (binds :+ sbind, incrShifts(shifts))
+              )
+            case i =>
+              i.zipWithIndex
+                .traverse((inst, idx) =>
+                  for {
+                    // NOTE: Specialized binding is shifted based on the number of
+                    // bindings built, as they also shift the context.
+                    bind <- buildSpecializedBind(bind, inst)
+                      .map(bindShift(idx, _))
+                    id <- addBinding(bind.i, bind.b)
+                  } yield bind
+                )
+                .map(l =>
+                  (binds ::: l, incrShifts(shifts) :+ Shift(l.length - 1, 0))
+                )
+          })
+      }
+      .map(_._1)
 
   /** Finds all bind instantiations in a specified list.
     *
@@ -86,59 +123,34 @@ object Monomorphization {
     }
   } yield bindInsts.filter(_.tys.forall(_.isPrimitive))
 
-  def toSpecializedBinds(
-      binds: List[Bind],
-      insts: List[Instantiation]
-  ): ContextState[List[Bind]] =
-    binds
-      .foldLeftM((List[Bind](), 0)) { case ((acc, shift), bind) =>
-        getBindInstantiations(bind, insts).flatMap(_ match {
-          case Nil =>
-            val sbind = bindShift(shift, bind)
-            addBinding(sbind.i, sbind.b).map(_ => (acc :+ sbind, shift))
-          case i =>
-            i.zipWithIndex
-              .traverse((inst, idx) =>
-                for {
-                  // NOTE: Specialized binding is shifted based on the number of
-                  // bindings built, as they also shift the context.
-                  binding <- buildSpecializedBinding(bind.b, inst)
-                    .map(bindingShift(idx, _))
-                  name <- toContextState(inst.bindName())
-                  id <- addBinding(name, binding)
-                } yield Bind(id, binding, bind.insts)
-              )
-              .map(l => (acc ::: l, shift + l.length - 1))
-        })
-      }
-      .map(_._1)
-
-// TODO: On specializing binding we also gotta specilize instantiation types that exist on
-// on the binding itself. In order to replace binding instantations later in the flow.
-  def buildSpecializedBinding(
-      binding: Binding,
-      instantiation: Instantiation
-  ): ContextState[Binding] =
-    binding match {
+  def buildSpecializedBind(
+      bind: Bind,
+      inst: Instantiation
+  ): ContextState[Bind] =
+    bind.b match {
       case TermAbbBind(term: TermTAbs, ty) =>
-        val tys = instantiation.tys.zipWithIndex
-        TermAbbBind(
-          tys.foldRight(term: Term) { case ((ty, idx), t) =>
-            specilizeTerm(t, idx, ty)
+        val binding = TermAbbBind(
+          inst.tys.zipWithIndex.foldRight(term: Term) { case ((ty, idx), t) =>
+            specializeTerm(t, idx, ty)
           },
-          ty.map(
-            tys.foldRight(_) { case ((tyS, idx), tyT) =>
-              specilizeType(tyT, idx, tyS)
-            }
+          ty.map(specializeType(_, inst.tys))
+        )
+        val insts = bind.insts.map(i =>
+          Instantiation(
+            i.i,
+            i.term,
+            i.tys.map(specializeType(_, inst.tys))
           )
-        ).pure[ContextState]
+        )
+        toContextState(inst.bindName())
+          .map(Bind(_, binding, insts))
       case _ =>
         throw new RuntimeException(
-          s"can't build specialized binding ${instantiation.i}"
+          s"can't build specialized binding ${inst.i}"
         )
     }
 
-  def specilizeTerm(
+  def specializeTerm(
       term: Term,
       typeVarIndex: Int,
       tyS: Type
@@ -150,14 +162,14 @@ object Monomorphization {
         throw new RuntimeException(s"can't specialize term ${term}")
     }
 
-  def specilizeType(
-      ty: Type,
-      typeVarIndex: Int,
-      tyS: Type
-  ): Type =
-    ty match {
-      case TypeAll(_, _, _, _, tyT) =>
-        typeSubstitute(tyS, typeVarIndex, tyT)
+  def specializeType(ty: Type, tys: List[Type]): Type =
+    tys.zipWithIndex.foldRight(ty) {
+      case ((tyS, idx), TypeAll(_, _, _, _, tyT)) =>
+        typeSubstitute(tyS, idx, tyT)
+      case ((tyS, idx), tyT: TypeVar) =>
+        /* TODO: This subsitute should involve particular shift in context, as the type var to substitute `tyT` has
+         * an index _deep_ in the context. */
+        typeSubstitute(tyS, idx + 2, tyT)
       case _ => throw new RuntimeException(s"can't specialize type ${ty}")
     }
 
