@@ -1581,6 +1581,7 @@ fun id[A](a: A) -> A
 fun main() -> i32
     let s = id("Hello World")
     let i = id(5)
+    let f = id(99.9)
     print(s)
     i
         """,
@@ -1591,17 +1592,24 @@ identity#str v0 =
 identity#i32 v1 =
  pure v1
 
-id#str a2 =
- identity#str a2
+identity#f32 v2 =
+ pure v2
 
-id#i32 a3 =
+id#str a3 =
  identity#str a3
 
-grinMain _4 =
- s6 <-  id#str #"Hello World"
- i8 <-  id#i32 5
- _10 <-  _prim_string_print s6
- pure i8
+id#i32 a4 =
+ identity#str a4
+
+id#f32 a5 =
+ identity#str a5
+
+grinMain _6 =
+ s8 <-  id#str #"Hello World"
+ i10 <-  id#i32 5
+ f12 <-  id#f32 99.9
+ _14 <-  _prim_string_print s8
+ pure i10
         """)
     )
   }

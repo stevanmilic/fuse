@@ -70,6 +70,7 @@ object BuiltIn {
         )
       )
     ),
+    // TODO: Use generic versions of operators.
     buildBind(
       "&sub",
       TermAbbBind(

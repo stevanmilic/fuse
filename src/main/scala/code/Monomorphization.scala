@@ -87,7 +87,7 @@ object Monomorphization {
                   for {
                     // NOTE: Specialized binding is shifted based on the number of
                     // bindings built, as they also shift the context.
-                    bind <- buildSpecializedBind(bind, inst)
+                    bind <- buildSpecializedBind(bind, inst, idx)
                       .map(bindShift(idx, _))
                     id <- addBinding(bind.i, bind.b)
                   } yield bind
@@ -125,25 +125,28 @@ object Monomorphization {
 
   def buildSpecializedBind(
       bind: Bind,
-      inst: Instantiation
+      inst: Instantiation,
+      idx: Int
   ): ContextState[Bind] =
     bind.b match {
       case TermAbbBind(term: TermTAbs, ty) =>
-        val binding = TermAbbBind(
-          inst.tys.zipWithIndex.foldRight(term: Term) { case ((ty, idx), t) =>
-            specializeTerm(t, idx, ty)
-          },
-          ty.map(specializeType(_, inst.tys))
-        )
-        val insts = bind.insts.map(i =>
-          Instantiation(
-            i.i,
-            i.term,
-            i.tys.map(specializeType(_, inst.tys))
+        for {
+          name <- toContextState(inst.bindName())
+          ctxLength <- State.inspect { (ctx: Context) => ctx._1.length }
+          binding = TermAbbBind(
+            inst.tys.zipWithIndex.foldRight(term: Term) { case ((ty, idx), t) =>
+              specializeTerm(t, idx, ty)
+            },
+            ty.map(specializeType(_, inst.tys, ctxLength - idx))
           )
-        )
-        toContextState(inst.bindName())
-          .map(Bind(_, binding, insts))
+          insts = bind.insts.map(i =>
+            Instantiation(
+              i.i,
+              i.term,
+              i.tys.map(specializeType(_, inst.tys, ctxLength - idx))
+            )
+          )
+        } yield Bind(name, binding, insts)
       case _ =>
         throw new RuntimeException(
           s"can't build specialized binding ${inst.i}"
@@ -162,14 +165,22 @@ object Monomorphization {
         throw new RuntimeException(s"can't specialize term ${term}")
     }
 
-  def specializeType(ty: Type, tys: List[Type]): Type =
+  def specializeType(ty: Type, tys: List[Type], ctxLength: Int): Type =
     tys.zipWithIndex.foldRight(ty) {
       case ((tyS, idx), TypeAll(_, _, _, _, tyT)) =>
         typeSubstitute(tyS, idx, tyT)
       case ((tyS, idx), tyT: TypeVar) =>
-        /* TODO: This subsitute should involve particular shift in context, as the type var to substitute `tyT` has
-         * an index _deep_ in the context. */
-        typeSubstitute(tyS, idx + 2, tyT)
+        /* NOTE: As we don't have complete context information of the type
+         * variable that should be substituted, we calculate its index
+         * by using:
+         * - curent ctx length
+         * - `tyT` context length when it was built
+         * - index of the type variable we want to substite
+         *
+         * The formula is: <ctx_diff> - <type_var_index> - 1
+         * */
+        val c = (tyT.length - ctxLength) - idx - 1
+        typeSubstitute(tyS, c, tyT)
       case _ => throw new RuntimeException(s"can't specialize type ${ty}")
     }
 
