@@ -31,7 +31,7 @@ object Representation {
       Representation.kindToString(k).pure[StateEither]
     case TypeEMarkBind => "[mark]".pure
     case TypeEFreeBind => s"[free]".pure
-    case TypeESolutionBind(ty) =>
+    case TypeESolutionBind(ty, _) =>
       Context
         .runE(Representation.typeToString(ty, buildContext = true))
         .map(s => s"[solution] $s")

@@ -12,14 +12,26 @@ import core.Terms.*
 import core.TypeChecker.*
 import core.Types.*
 import parser.Info.Info
+import core.Desugar.MethodNamePrefix
 
 object Instantiations {
   val BindTypeSeparator = "#"
 
-  case class Instantiation(i: String, term: Term, tys: List[Type]) {
-    def bindName(): StateEither[String] = tys
-      .traverse(Representation.typeToString(_))
-      .map(t => s"${i}$BindTypeSeparator${t.mkString(BindTypeSeparator)}")
+  case class Instantiation(
+      i: String,
+      term: Term,
+      tys: List[Type],
+      cls: List[TypeClass] = List()
+  ) {
+    def bindName(): StateEither[String] =
+      // NOTE: When class is set on the instantiation it points to a type
+      // instances's method. Hence we need to add a method prefix.
+      val methodPrefix = if cls.isEmpty then "" else MethodNamePrefix
+      tys
+        .traverse(Representation.typeToString(_))
+        .map(t =>
+          s"$methodPrefix${i}$BindTypeSeparator${(t ++ cls.map(_.name)).mkString(BindTypeSeparator)}"
+        )
   }
 
   def build(
@@ -37,7 +49,8 @@ object Instantiations {
           case None       => TypeError.format(NotFoundTypeError(info))
         }
         tys = solutions.map(_.t)
-      } yield List(Instantiation(name, TermVar(info, idx, c), tys))
+        cls = solutions.map(_.cls).flatten
+      } yield List(Instantiation(name, TermVar(info, idx, c), tys, cls))
     case _ => Nil.pure
   }
 

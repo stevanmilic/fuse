@@ -19,6 +19,7 @@ import core.Instantiations.Instantiation
 import core.Context
 import core.Shifting.*
 import parser.Info.UnknownInfo
+import core.Desugar.toTypeInstanceMethodID
 
 object Monomorphization {
 
@@ -101,8 +102,10 @@ object Monomorphization {
 
   /** Finds all bind instantiations in a specified list.
     *
-    * In case bind is an ADT all instantiations for that type are associated to
-    * it.
+    * In case bind is:
+    *   - an ADT all instantiations for that type are associated to it
+    *   - a type instance implementation of class method then those
+    *     instantiations are associated to it
     */
   def getBindInstantiations(
       bind: Bind,
@@ -118,7 +121,7 @@ object Monomorphization {
               _.map(_ == typeName).getOrElse(false)
             )
           )
-          .map(_.map(i => Instantiation(bind.i, i.term, i.tys)))
+          .map(_.map(i => Instantiation(bind.i, i.term, i.tys, i.cls)))
           .map(Instantiations.distinct(_))
     }
   } yield bindInsts.filter(_.tys.forall(_.isPrimitive))
@@ -143,10 +146,34 @@ object Monomorphization {
             Instantiation(
               i.i,
               i.term,
-              i.tys.map(specializeType(_, inst.tys, ctxLength - idx))
+              i.tys.map(specializeType(_, inst.tys, ctxLength - idx)),
+              i.cls
             )
           )
         } yield Bind(name, binding, insts)
+      /* TODO:
+       * 1. Find type class for the class method in the context.
+       * 2. Find class instances for the type class.
+       * 3. Specilize the class method with type instance term bind.
+       *
+       * Hmm should we really specialize the class method? We can just replace
+       * the instantiation with the specialized type instance term bind.
+       * ---
+       * It seems like we should specialize the class method in case it's a
+       * ganeric function. In a simple function case we can just use a
+       * type instance impl.
+       * */
+      case TermAbbBind(TermClassMethod(_, _, cls), ty) =>
+        bind.pure
+      // for {
+      //   typeInstanceID <- toTypeInstanceMethodID(
+      //     bind.i,
+      //     inst.tys.head,
+      //     cls.name
+      //   )
+      //   binding <- getBinding(typeInstanceID)
+      //
+      // } yield Bind(name, binding, insts)
       case _ =>
         throw new RuntimeException(
           s"can't build specialized binding ${inst.i}"

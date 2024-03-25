@@ -1,6 +1,6 @@
 // Define common settings for all platforms
 val sharedSettings = Seq(
-  scalaVersion := "3.3.1",
+  scalaVersion := "3.4.0",
   name := "fuse",
   version := "0.1",
   scalacOptions ++= Seq(

@@ -24,21 +24,22 @@ object Shifting {
         Instantiation(
           i.i,
           termShiftAbove(d, c, i.term),
-          i.tys.map(typeShiftAbove(d, c, _))
+          i.tys.map(typeShiftAbove(d, c, _)),
+          i.cls
         )
       )
     )
 
   def bindingShift(d: Int, b: Binding, c: Int = 0): Binding = b match {
-    case NameBind              => NameBind
-    case TypeEMarkBind         => TypeEMarkBind
-    case TypeEFreeBind         => TypeEFreeBind
-    case TempVarBind           => TempVarBind
-    case TypeESolutionBind(ty) => TypeESolutionBind(typeShiftAbove(d, c, ty))
-    case t @ TypeVarBind(_, _) => t
-    case VarBind(ty)           => VarBind(typeShiftAbove(d, c, ty))
-    case TypeAbbBind(ty, k)    => TypeAbbBind(typeShiftAbove(d, c, ty), k)
-    case c: TypeClassBind      => c
+    case NameBind                 => NameBind
+    case TypeEMarkBind            => TypeEMarkBind
+    case TypeEFreeBind            => TypeEFreeBind
+    case TempVarBind              => TempVarBind
+    case TypeESolutionBind(ty, _) => TypeESolutionBind(typeShiftAbove(d, c, ty))
+    case t @ TypeVarBind(_, _)    => t
+    case VarBind(ty)              => VarBind(typeShiftAbove(d, c, ty))
+    case TypeAbbBind(ty, k)       => TypeAbbBind(typeShiftAbove(d, c, ty), k)
+    case c: TypeClassBind         => c
     case TypeClassInstanceBind(cls, ty, m) =>
       TypeClassInstanceBind(cls, typeShiftAbove(d, c, ty), m)
     case TermAbbBind(term, Some(ty)) =>

@@ -9,27 +9,36 @@ object BuiltIn {
   def buildFunc(args: List[Type], r: Type): Type =
     (args :+ r).reduceRight(TypeArrow(UnknownInfo, _, _))
 
-  def buildBind(name: String, binding: Binding): Bind =
-    Bind(name, binding)
+  def buildBind(name: String, binding: Binding): List[Bind] =
+    List(Bind(name, binding))
 
-  def buildClassMethodBind(name: String, ty: Type): Bind =
-    buildBind(name, TermAbbBind(TermClassMethod(i, ty)))
+  def buildClassMethodBind(name: String, ty: Type, cls: TypeClass): List[Bind] =
+    buildBind(name, TermAbbBind(TermClassMethod(i, ty, cls)))
 
-  def buildClassBind(name: String): Bind =
+  def buildClassBind(name: String): List[Bind] =
     buildBind(name, TypeClassBind(KindStar))
 
   def buildClassInstanceBind(
-      name: String,
       typeClass: String,
+      typeName: String,
       ty: Type,
-      method: Tuple2[String, Term]
-  ): Bind =
-    buildBind(name, TypeClassInstanceBind(typeClass, ty, List(method._1)))
+      method: String,
+      body: Term
+  ): List[Bind] =
+    val typeClassInstance = buildBind(
+      Desugar.toTypeInstanceBindID(typeName, typeClass),
+      TypeClassInstanceBind(typeClass, ty, List(method))
+    )
+    val methodBind = buildBind(
+      Desugar.toTypeInstanceMethodID(method, typeName, typeClass),
+      TermAbbBind(body)
+    )
+    typeClassInstance ++ methodBind
 
   val i = UnknownInfo
 
   // TODO: Add built-ins for the rest of the prim ops.
-  val Binds = List(
+  val Binds: List[Bind] = List(
     buildClassBind("Add"),
     buildClassMethodBind(
       "+",
@@ -42,32 +51,30 @@ object BuiltIn {
           List(TypeVar(i, 0, 1), TypeVar(i, 0, 1)),
           TypeVar(i, 0, 1)
         )
-      )
+      ),
+      TypeClass(i, "Add")
     ),
     buildClassInstanceBind(
-      "#Add#int",
       "Add",
+      "i32",
       TypeInt(i),
-      ("+", TermBuiltin(buildFunc(List(TypeInt(i), TypeInt(i)), TypeInt(i))))
+      "+",
+      TermBuiltin(buildFunc(List(TypeInt(i), TypeInt(i)), TypeInt(i)))
     ),
     buildClassInstanceBind(
-      "#Add#float",
       "Add",
+      "f32",
       TypeFloat(i),
-      (
-        "+",
-        TermBuiltin(buildFunc(List(TypeFloat(i), TypeFloat(i)), TypeFloat(i)))
-      )
+      "+",
+      TermBuiltin(buildFunc(List(TypeFloat(i), TypeFloat(i)), TypeFloat(i)))
     ),
     buildClassInstanceBind(
-      "#Add#string",
       "Add",
+      "str",
       TypeString(i),
-      (
-        "+",
-        TermBuiltin(
-          buildFunc(List(TypeString(i), TypeString(i)), TypeString(i))
-        )
+      "+",
+      TermBuiltin(
+        buildFunc(List(TypeString(i), TypeString(i)), TypeString(i))
       )
     ),
     // TODO: Use generic versions of operators.
@@ -97,5 +104,5 @@ object BuiltIn {
       "int_to_str",
       TermAbbBind(TermBuiltin(buildFunc(List(TypeInt(i)), TypeString(i))))
     )
-  )
+  ).flatten
 }

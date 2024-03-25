@@ -396,7 +396,7 @@ object Grin {
           tyT1 <- typeCheck(t)
           tyT1S <- TypeChecker.simplifyType(tyT1)
           typeName <- getNameFromType(tyT1)
-          f = methodToName(Desugar.toMethodId(method, typeName))
+          f = methodToName(Desugar.toMethodID(method, typeName))
         } yield Value(s"$f")
       case TermFold(_, _)   => StateT.pure(Value("pure "))
       case TermInt(_, i)    => StateT.pure(Value(i.toString))
@@ -584,7 +584,7 @@ object Grin {
 
   def toVariable(idx: Integer): ContextState[String] =
     getNameFromIndex(idx).map(_ match {
-      case "&add"       => "_prim_int_add"
+      case "!+#i32#Add" => "_prim_int_add"
       case "&eq"        => "_prim_int_eq"
       case "&multiply"  => "_prim_int_mul"
       case "print"      => "_prim_string_print"

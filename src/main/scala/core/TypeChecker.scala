@@ -157,7 +157,6 @@ object TypeChecker {
           typeBounds <- EitherT.liftF(
             getTypeBounds(rootTypeVarOption.getOrElse(tyT1S))
           )
-          // TODO: Here we gotta build the instantion.
           methodType <- inferMethod(tyT1, tyT1S, typeBounds, method, info)
         } yield (methodType, insts)
       case TermAssocProj(info, ty, method) =>
@@ -304,14 +303,14 @@ object TypeChecker {
             TagFieldMismatchTypeError(info, tyTi, tyTiExpected)
           )
         } yield (typeSubstituteTop(ty1, tySVar), insts)
-      case TermTrue(info)            => (TypeBool(info), Nil).pure
-      case TermFalse(info)           => (TypeBool(info), Nil).pure
-      case TermInt(info, _)          => (TypeInt(info), Nil).pure
-      case TermFloat(info, _)        => (TypeFloat(info), Nil).pure
-      case TermString(info, _)       => (TypeString(info), Nil).pure
-      case TermUnit(info)            => (TypeUnit(info), Nil).pure
-      case TermBuiltin(ty)           => (ty, Nil).pure
-      case TermClassMethod(info, ty) => (ty, Nil).pure
+      case TermTrue(info)               => (TypeBool(info), Nil).pure
+      case TermFalse(info)              => (TypeBool(info), Nil).pure
+      case TermInt(info, _)             => (TypeInt(info), Nil).pure
+      case TermFloat(info, _)           => (TypeFloat(info), Nil).pure
+      case TermString(info, _)          => (TypeString(info), Nil).pure
+      case TermUnit(info)               => (TypeUnit(info), Nil).pure
+      case TermBuiltin(ty)              => (ty, Nil).pure
+      case TermClassMethod(info, ty, _) => (ty, Nil).pure
     }
 
   /** Infers the type of an application of a function of type `fun` to `exp`.
@@ -1032,17 +1031,20 @@ object TypeChecker {
       // are not bound to the type
       case l =>
         for {
-          // TODO: Preserve the mapping of class instances for code generation.
           instances <- EitherT.liftF(
-            l.traverse(getClassIntances(_)).map(_.flatten)
+            l.traverse(c =>
+              getClassIntances(c).map(_.zip(LazyList.continually(c)))
+            ).map(_.flatten)
           )
           rootType = findRootType(ty)
-          isTypeOfInstance <- instances
-            .traverse(tyi => EitherT.liftF(isTypeEqual(tyi, rootType)))
-            .map(_.exists(identity))
+          implCls <- instances
+            .traverse { case (tyi, c) =>
+              EitherT.liftF(isTypeEqual(tyi, rootType)).map((_, c))
+            }
+            .map(_.collect({ case (true, c) => c }))
           typeBounds <- EitherT.liftF(getTypeBounds(rootType))
           v <- (
-            !instances.isEmpty && isTypeOfInstance,
+            !implCls.isEmpty,
             ty,
             isTypeClassBound(l, typeBounds)
           ) match {
@@ -1056,10 +1058,17 @@ object TypeChecker {
               )
             case (false, _, false) =>
               TypeError.format(
-                TypeClassInstanceNotFound(ty.info, cls, instances, rootType)
+                TypeClassInstanceNotFound(
+                  ty.info,
+                  cls,
+                  instances.unzip._1,
+                  rootType
+                )
               )
             case _ =>
-              EitherT.liftF(replaceEVar(idx, eA, TypeESolutionBind(ty)))
+              EitherT.liftF(
+                replaceEVar(idx, eA, TypeESolutionBind(ty, implCls))
+              )
           }
         } yield v
     }

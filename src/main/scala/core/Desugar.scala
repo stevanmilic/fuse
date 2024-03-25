@@ -70,7 +70,7 @@ object Desugar {
         constructor <- Context.runE(
           buildRecordConstructor(info, i, typ, Left(fields.map(_.p)))
         )
-        constructorBind <- bindTermAbb(toRecordConstructorId(i), constructor)
+        constructorBind <- bindTermAbb(toRecordConstructorID(i), constructor)
       } yield typeBind :: List(constructorBind)
     case FTupleTypeDecl(info, FIdentifier(i), typ, types) =>
       val tuple = toTupleTypeRecord(info, types)
@@ -81,7 +81,7 @@ object Desugar {
         constructor <- Context.runE(
           buildRecordConstructor(info, i, typ, Right(types))
         )
-        constructorBind <- bindTermAbb(toRecordConstructorId(i), constructor)
+        constructorBind <- bindTermAbb(toRecordConstructorID(i), constructor)
       } yield typeBind :: List(constructorBind)
     case FTypeAlias(_, FIdentifier(i), typ, t) =>
       val alias = toType(t)
@@ -101,7 +101,7 @@ object Desugar {
           toParamsWithSelf(sig.p, typeIdentifier, typeParams, sig.tp)
         FFuncSig(
           sig.info,
-          FIdentifier(toMethodId(sig.i.value, typeIdentifier.value)),
+          FIdentifier(toMethodID(sig.i.value, typeIdentifier.value)),
           typ,
           p,
           sig.r
@@ -121,11 +121,12 @@ object Desugar {
           toParamsWithSelf(sig.p, FIdentifier(SelfTypeName), typeParams, sig.tp)
         FFuncSig(
           sig.info,
-          FIdentifier(toMethodId(sig.i.value, traitIdentifier.value)),
+          FIdentifier(toMethodID(sig.i.value, traitIdentifier.value)),
           Some(selfTypeParam +: typ.toSeq.flatten),
           p,
           sig.r
         )
+      val typeClass = TypeClass(info, traitIdentifier.value)
       for {
         bt <- bindTypeClass(traitIdentifier.value, typeParams)
         bf <- functions.toList
@@ -134,7 +135,7 @@ object Desugar {
             case Right(s) =>
               val ms = modifySignature(s)
               for {
-                m <- Context.runE(toClassMethod(ms, typeParams))
+                m <- Context.runE(toClassMethod(ms, typeParams, typeClass))
                 ta <- bindTermAbb(ms.i.value, m)
               } yield List(ta)
           }
@@ -154,7 +155,7 @@ object Desugar {
         FFuncSig(
           sig.info,
           FIdentifier(
-            toTypeInstanceMethodId(
+            toTypeInstanceMethodID(
               sig.i.value,
               typeIdentifier.value,
               traitIdentifier.value
@@ -197,7 +198,7 @@ object Desugar {
   ): StateEither[Bind] =
     EitherT.liftF(
       Context
-        .addName(s"#${typeClass}#${typeName}")
+        .addName(toTypeInstanceBindID(typeClass, typeName))
         .map(Bind(_, TypeClassInstanceBind(typeClass, ty, methods)))
     )
 
@@ -541,7 +542,8 @@ object Desugar {
 
   def toClassMethod(
       sig: FFuncSig,
-      traitTypeParams: Option[Seq[FTypeParam]]
+      traitTypeParams: Option[Seq[FTypeParam]],
+      cls: TypeClass
   ): StateEither[Term] = for {
     typeParams <- sig.tp.getOrElse(Seq()).traverse { v =>
       for {
@@ -566,7 +568,7 @@ object Desugar {
       }
       TypeAll(p._1, p._2, kind, p._3, acc)
     )
-  } yield TermClassMethod(sig.info, methodType)
+  } yield TermClassMethod(sig.info, methodType, cls)
 
   def toParamsWithSelf(
       params: Option[FParamsWithSelf],
@@ -602,7 +604,7 @@ object Desugar {
   def toTermVar(info: Info, i: String): ContextState[Option[Term]] =
     State { ctx =>
       Context
-        .nameToIndex(ctx, toRecordConstructorId(i))
+        .nameToIndex(ctx, toRecordConstructorID(i))
         .orElse(Context.nameToIndex(ctx, i))
         .orElse(Context.nameToIndex(ctx, toRecAbsId(i))) match {
         case Some(index) => (ctx, Some(TermVar(info, index, ctx._1.length)))
@@ -714,7 +716,7 @@ object Desugar {
   ): ContextState[Term] =
     values
       .traverse { case (n, t) =>
-        toTermVar(info, withTupleParamId(n)).map(term => (n, term.get))
+        toTermVar(info, withTupleParamID(n)).map(term => (n, term.get))
       }
       .map(TermRecord(info, _))
 
@@ -763,7 +765,7 @@ object Desugar {
       body: StateEither[Term]
   ): StateEither[Term] =
     values
-      .map { case (i, t) => (withTupleParamId(i), t) }
+      .map { case (i, t) => (withTupleParamID(i), t) }
       .foldRight(body)((p, acc) =>
         for {
           typ <- toType(p._2)
@@ -802,30 +804,35 @@ object Desugar {
 
   // Prepends the identifier with "t" if it's an integer – depicting it's used
   // for the tuple records. If not, the identifier is returned unchanged.
-  def withTupleParamId(i: String) = i.toIntOption match {
+  def withTupleParamID(i: String) = i.toIntOption match {
     case Some(v) => s"t$i"
     case None    => i
   }
 
   // The record constructor has a prefix "%" that should be searched during
   // type checking when the record type is found in the application.
-  def toRecordConstructorId(i: String) = s"$RecordConstrPrefix$i"
+  def toRecordConstructorID(i: String) = s"$RecordConstrPrefix$i"
 
   // The method type has a prefix "!" that should be searched during type
   // checking when the projection is found for a variable. There's also a "#"
   // separator that depicts the type name for the method.
-  def toMethodId(methodName: String, typeName: String) =
+  def toMethodID(methodName: String, typeName: String) =
     s"$MethodNamePrefix$methodName#$typeName"
 
   // The method type has a prefix "!" that should be searched during type
   // checking when the projection is found for a variable. There's also a "#"
   // separator that depicts the type name and the type class for the method.
-  def toTypeInstanceMethodId(
+  def toTypeInstanceMethodID(
       methodName: String,
       typeName: String,
       typeClass: String
   ) =
     s"$MethodNamePrefix$methodName#$typeName#$typeClass"
+
+  // The type instance bind has a prefix "#" that should be searched during type
+  // checking; constisting of type name and type class name.
+  def toTypeInstanceBindID(typeClass: String, typeName: String) =
+    s"#$typeClass#$typeName"
 
   // # Constructors # region_end
 

@@ -235,7 +235,7 @@ object Context {
     methodOptionIdx <- EitherT.liftF(
       State.inspect { (ctx: Context) =>
         {
-          val methodID = Desugar.toMethodId(method, typeName)
+          val methodID = Desugar.toMethodID(method, typeName)
           val recAbsID = Desugar.toRecAbsId(methodID)
           getNotes(ctx).indexWhere { case ((i, _)) =>
             i.startsWith(methodID) || i == recAbsID
@@ -276,7 +276,7 @@ object Context {
   ): StateEither[Type] = for {
     methodOptionIdx <- EitherT.liftF(
       State.inspect { (ctx: Context) =>
-        nameToIndex(ctx, Desugar.toMethodId(method, cls.name))
+        nameToIndex(ctx, Desugar.toMethodID(method, cls.name))
       }
     )
     methodType <- methodOptionIdx match {
@@ -420,7 +420,7 @@ object Context {
     State.inspect { ctx =>
       val notes = getNotes(ctx, withMarks = true)
       val t = notes.collectFirst {
-        case (v, TypeESolutionBind(ty)) if v == eV.name => ty
+        case (v, TypeESolutionBind(ty, _)) if v == eV.name => ty
       }
       // NOTE: We are shifting the existential variable solution by the number
       // of "regular" (non-mark) bindings untill its place in the context. This
